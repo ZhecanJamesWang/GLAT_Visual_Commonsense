@@ -12,9 +12,9 @@ from torch import nn
 
 
 # from pygcn.utils import load_data, accuracy
+from models import GCN
 from data import VG_data
 from torch.utils.data import DataLoader
-from models import Ensemble_encoder
 import pdb
 
 
@@ -38,10 +38,6 @@ parser.add_argument('--dropout', type=float, default=0.5,
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-args.GAT_num = 1
-args.Bert_num = 1
-
 device = 'cuda'
 
 np.random.seed(args.seed)
@@ -50,31 +46,23 @@ if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 # Load data
+# adj, features, labels, idx_train, idx_val, idx_test = load_data()
 train_dataset = VG_data(status='train')
-train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, drop_last=False)
+train_loader = DataLoader(train_dataset, batch_size=1,shuffle = True,drop_last=False)
 test_dataset = VG_data(status='test')
-test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, drop_last=False)
-
-total_num = train_loader.get_total_num()
-fea_dim = train_loader.get_fea_dim()
+test_loader = DataLoader(test_dataset, batch_size=1,shuffle = True,drop_last=False)
 
 # Model and optimizer
-model = Ensemble_encoder(nfeat=fea_dim,
-                         nhid=args.hidden,
-                         noutput=total_num,
-                         dropout=args.dropout,
-                         nheads=args.nb_heads,
-                         alpha=args.alpha,
-                         GAT_num=args.GAT_num,
-                         Bert_num=args.Bert_num,
-                         total_num=total_num)
-
-
+model = GCN(nfeat=300,
+            nhid1=256,
+            nhid2=128,
+            nhid3=128,
+            n_class=2,
+            dropout=args.dropout)
 model = torch.nn.DataParallel(model)
 model = model.to(device=device)
 optimizer = optim.Adam(model.parameters(),
                        lr=args.lr, weight_decay=args.weight_decay)
-
 cri_rec = torch.nn.MSELoss()
 cri_rec = cri_rec.to(device = device)
 cri_con = torch.nn.CrossEntropyLoss()
@@ -89,6 +77,7 @@ cri_con = cri_con.to(device = device)
 #     idx_val = idx_val.cuda()
 #     idx_test = idx_test.cuda()
 
+
 def train(epoch):
     model.train()
     t = time.time()
@@ -96,7 +85,8 @@ def train(epoch):
     loss_totoal_con = 0
     num_sample = 0
 
-    for i, (input_embed, adj, gt_embed, mask_idx) in enumerate(train_loader):
+    # for i, (input_embed, adj, gt_embed, mask_idx) in enumerate(train_loader):
+    for i, (gt_embed, input_embed, adj, input_mask) in enumerate(train_loader):
         # pdb.set_trace()
 
         input_embed = input_embed.squeeze(0)
@@ -114,8 +104,7 @@ def train(epoch):
         else:
             pred_reconst, pred_connect, num_list = model(input_embed, adj)
             loss_rec = cri_rec(pred_reconst, gt_embed) 
-            loss_con = cri_con(pred_connect, torch.cat((torch.ones(num_list[0]),
-                                                        torch.zeros(num_list[1])), 0).long().to(device=device))
+            loss_con = cri_con(pred_connect,torch.cat((torch.ones(num_list[0]),torch.zeros(num_list[1])), 0).long().to(device=device))
             loss = loss_rec + loss_con
 
             optimizer.zero_grad()
