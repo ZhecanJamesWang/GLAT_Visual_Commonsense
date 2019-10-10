@@ -17,24 +17,28 @@ class VG_data(Dataset):
     def __init__(self, data_root='/home/haoxuan/code/pygcn/', status='train'):
         super(VG_data, self).__init__()
 
-        encoder_path = "./model/encoder_bpe_40000.json"
-        bpe_path = "./model/vocab_40000.bpe"
-        self.text_encoder = utils.TextEncoder(encoder_path, bpe_path)
 
-# ToDo: vvvvvvvvvvv  make this a separate function vvvvvvvvvvv
-        new_categories = []
-        start_token = "<START>"
-        end_token = "<END>"
-        blank_token = "<blank>"
-        mask_token = "<MASK>"
-        new_categories += [blank_token]
-        new_categories += [start_token]
-        new_categories += [end_token]
-        new_categories += [mask_token]
-        for category in new_categories:
-            if category not in self.text_encoder.encoder.keys():
-                self.text_encoder.decoder[len(self.text_encoder.encoder)] = category
-                self.text_encoder.encoder[category] = len(self.text_encoder.encoder)
+        with open(os.path.join(data_root, 'vocab_v2.pkl'), 'rb') as f:
+            self.vocab = pickle.load(f, encoding='latin')
+        self.vocab_encoder = self.vocab['encoder']
+        self.vocab_decoder = self.vocab['decoder']
+
+#         encoder_path = "./model/encoder_bpe_40000.json"
+#         bpe_path = "./model/vocab_40000.bpe"
+#         self.text_encoder = utils.TextEncoder(encoder_path, bpe_path)
+#         new_categories = []
+#         start_token = "<START>"
+#         end_token = "<END>"
+#         blank_token = "<blank>"
+#         mask_token = "<MASK>"
+#         new_categories += [blank_token]
+#         new_categories += [start_token]
+#         new_categories += [end_token]
+#         new_categories += [mask_token]
+#         for category in new_categories:
+#             if category not in self.text_encoder.encoder.keys():
+#                 self.text_encoder.decoder[len(self.text_encoder.encoder)] = category
+#                 self.text_encoder.encoder[category] = len(self.text_encoder.encoder)
 
         # self.rel_root = os.path.join(data_root, 'relationships.json')
         # self.atr_root = os.path.join(data_root, 'attributes.json')
@@ -49,7 +53,8 @@ class VG_data(Dataset):
         else:
             self.data_root = os.path.join(data_root, 'test_VG_v1.pkl')
 
-        self.data = pickle.load(open(self.data_root,'rb'), encoding='latin')
+        with open(self.data_root,'rb') as f:
+            self.data = pickle.load(f, encoding='latin')
 
         print('{} data num: {}'.format(status, len(self.data['gt_embed_ali'])))
 
@@ -63,7 +68,8 @@ class VG_data(Dataset):
         input_mask[mask_idx] = 1
 
         input_embed = copy.deepcopy(gt_embed)
-        input_embed[mask_idx] = np.array(self.text_encoder.encoder["<MASK>"])
+        input_embed[mask_idx] = np.array(self.vocab_encoder["<MASK>"+"</w>"])
+        # input_embed[mask_idx] = np.array(self.text_encoder.encoder["<MASK>"])
 
         # pdb.set_trace()
 
