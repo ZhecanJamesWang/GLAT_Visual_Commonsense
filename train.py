@@ -15,6 +15,7 @@ from torch import nn
 from models import GCN
 from data import VG_data
 from torch.utils.data import DataLoader
+from models import Ensemble_encoder
 import pdb
 
 
@@ -31,13 +32,21 @@ parser.add_argument('--lr', type=float, default=0.01,
                     help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=5e-4,
                     help='Weight decay (L2 loss on parameters).')
-parser.add_argument('--hidden', type=int, default=16,
-                    help='Number of hidden units.')
+# parser.add_argument('--hidden', type=int, default=16,
+#                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.5,
                     help='Dropout rate (1 - keep probability).')
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
+
+# ToDo: hyperparameters connect with command line later
+args.GAT_num = 1
+args.Trans_num = 1
+args.fea_dim = 300
+args.nhid_gat = 100
+args.nhid_trans = 100
+
 device = 'cuda'
 
 np.random.seed(args.seed)
@@ -52,30 +61,29 @@ train_loader = DataLoader(train_dataset, batch_size=1,shuffle = True,drop_last=F
 test_dataset = VG_data(status='test')
 test_loader = DataLoader(test_dataset, batch_size=1,shuffle = True,drop_last=False)
 
+vocab_num = VG_data().vocab_num()
+
 # Model and optimizer
-model = GCN(nfeat=300,
-            nhid1=256,
-            nhid2=128,
-            nhid3=128,
-            n_class=2,
-            dropout=args.dropout)
+model = Ensemble_encoder(vocab_num = vocab_num,
+                         feat_dim=args.fea_dim,
+                         nhid_gat=args.nhid_gat,
+                         nhid_trans=args.nhid_trans,
+                         dropout=args.dropout,
+                         nheads=args.nb_heads,
+                         alpha=args.alpha,
+                         GAT_num=args.GAT_num,
+                         Trans_num=args.Trans_num)
+
 model = torch.nn.DataParallel(model)
 model = model.to(device=device)
 optimizer = optim.Adam(model.parameters(),
                        lr=args.lr, weight_decay=args.weight_decay)
+
 cri_rec = torch.nn.MSELoss()
 cri_rec = cri_rec.to(device = device)
+
 cri_con = torch.nn.CrossEntropyLoss()
 cri_con = cri_con.to(device = device)
-
-# if args.cuda:
-#     model.cuda()
-#     features = features.cuda()
-#     adj = adj.cuda()
-#     labels = labels.cuda()
-#     idx_train = idx_train.cuda()
-#     idx_val = idx_val.cuda()
-#     idx_test = idx_test.cuda()
 
 
 def train(epoch):
@@ -85,25 +93,20 @@ def train(epoch):
     loss_totoal_con = 0
     num_sample = 0
 
-    # for i, (input_embed, adj, gt_embed, mask_idx) in enumerate(train_loader):
     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(train_loader):
-        # pdb.set_trace()
-
-        input_embed = input_embed.squeeze(0)
-        adj = adj.squeeze(0)
-        gt_embed = gt_embed.squeeze(0)
 
         input_embed = input_embed.to(device=device)
         adj = adj.to(device=device)
         gt_embed = gt_embed.to(device=device)
-        # print(input_embed.size(), adj.size())
+        input_mask = input_mask.to(device=device)
 
         if adj.size(0) == 1:
             print('{} skip for 1 node'.format(i))
             continue
         else:
-            pred_reconst, pred_connect, num_list = model(input_embed, adj)
-            loss_rec = cri_rec(pred_reconst, gt_embed) 
+            pred_label, pred_connect, num_list = model(input_embed, adj)
+
+            loss_rec = cri_rec(pred_label, gt_embed)
             loss_con = cri_con(pred_connect,torch.cat((torch.ones(num_list[0]),torch.zeros(num_list[1])), 0).long().to(device=device))
             loss = loss_rec + loss_con
 
@@ -142,6 +145,7 @@ def train(epoch):
 
 def test(epoch):
     model.eval()
+    t = time.time()
 
     loss_total_rec = 0
     loss_totoal_con = 0
@@ -192,3 +196,10 @@ print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
 # Testing
 # test()
+
+
+# Todo:
+# 1. loss
+# 2. dimension matching
+# 3. saving & loading vocab info
+# 4. (argument of Attention kvq)

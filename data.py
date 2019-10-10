@@ -6,20 +6,22 @@ import os
 import pdb
 import time
 from torch.utils.data import Dataset
-import gensim
 import pickle
 import utils
 import math
 import copy
 import random
-
 # from nltk.corpus import stopwords
 
 class VG_data(Dataset):
     def __init__(self, data_root='/home/haoxuan/code/pygcn/', status='train'):
+        super(VG_data, self).__init__()
+
         encoder_path = "./model/encoder_bpe_40000.json"
         bpe_path = "./model/vocab_40000.bpe"
         self.text_encoder = utils.TextEncoder(encoder_path, bpe_path)
+
+# ToDo: vvvvvvvvvvv  make this a separate function vvvvvvvvvvv
         new_categories = []
         start_token = "<START>"
         end_token = "<END>"
@@ -33,8 +35,6 @@ class VG_data(Dataset):
             if category not in self.text_encoder.encoder.keys():
                 self.text_encoder.decoder[len(self.text_encoder.encoder)] = category
                 self.text_encoder.encoder[category] = len(self.text_encoder.encoder)
-
-        super(VG_data, self).__init__()
 
         # self.rel_root = os.path.join(data_root, 'relationships.json')
         # self.atr_root = os.path.join(data_root, 'attributes.json')
@@ -56,6 +56,7 @@ class VG_data(Dataset):
     def __getitem__(self, idx):
         gt_embed = self.data['gt_embed_ali'][idx]
         adj = self.data['adj'][idx]
+
         mask_num = math.ceil(gt_embed.shape[0] * 0.10)
         mask_idx = random.sample(range(0, gt_embed.shape[0]), mask_num)
         input_mask = np.zeros((gt_embed.shape[0],), dtype=int)
