@@ -6,24 +6,29 @@ import os
 import pdb
 import time
 from torch.utils.data import Dataset
-import gensim
 import pickle
 import utils
 from tqdm import tqdm
+import os
 # from nltk.corpus import stopwords
-data_root='/home/haoxuan/data/VG/'
-w2v_root='/home/haoxuan/data/'
-status='train'
 
-rel_root = os.path.join(data_root, 'relationships.json')
-atr_root = os.path.join(data_root, 'attributes.json')
+home_path = os.environ['HOME']
+
+data_root = os.path.join(home_path, 'data/VG')
+filename = 'relationships.json'
+
+status = 'train'
+
+rel_root = os.path.join(data_root, filename)
+# atr_root = os.path.join(data_root, 'attributes.json')
 status = status
-w2v_root = os.path.join(w2v_root, 'GoogleNews-vectors-negative300.bin')
+
+print("loading vg data: ", filename)
 
 with open(rel_root) as f:
     rel_data = json.load(f)
 
-# word2vec_model = gensim.models.KeyedVectors.load_word2vec_format(w2v_root, binary=True)
+print("finish loading vg data: ", filename)
 
 total_data = {}
 total_data['gt_embed'] = []
@@ -38,7 +43,11 @@ total_data['node_name'] = []
 
 encoder_path = "./model/encoder_bpe_40000.json"
 bpe_path = "./model/vocab_40000.bpe"
+
+print("loading: ", encoder_path, bpe_path)
 text_encoder = utils.TextEncoder(encoder_path, bpe_path)
+print("finish loading: ", encoder_path, bpe_path)
+
 encoder = text_encoder.encoder
 new_categories = []
 start_token = "<START>"
@@ -113,30 +122,6 @@ for idx in tqdm(range(len(rel_data[:1000]))):
     total_data['adj'].append(adj)
     total_data['node_name'].append(nodes)
 
-    # gt_embed = []
-    # input_embed = np.zeros((len(nodes), max_length), dtype=int)
-    # for category in new_categories:
-    #     if category not in encoder.keys():
-    #         text_encoder.decoder[len(encoder)] = category
-    #         encoder[category] = len(encoder)
-    #
-    # for i, value in enumerate(nodes):
-    #     len_node = len(text_encoder.encode([value])[0])
-    #     # pdb.set_trace()
-    #     input_embed[i][:len_node] = np.array(text_encoder.encode([value])[0])
-    #     input_embed[i][len_node:] = np.array(encoder[blank_token])
-    #
-    #
-    # total_data['adj'].append(adj)
-    # total_data['input_embed'].append(input_embed)
-
-# unifying the dimension of all node embeddings across graphs
-# for idx, input_embed in enumerate(total_data['input_embed']):
-#     if input_embed.shape[-1] < max_length:
-#         res_embed = np.ones((input_embed.shape[0], max_length-input_embed.shape[-1]), dtype=int) * encoder[blank_token]
-#         input_embed = np.concatenate((input_embed, res_embed), axis=-1)
-#     total_data['gt_embed_ali'].append(input_embed)
-
 print('number of new categories', len(new_categories))
 for category in new_categories:
     if category not in encoder.keys() and category+'</w>' not in encoder.keys():
@@ -171,7 +156,7 @@ test_data = {}
 test_data['gt_embed_ali'] = total_data['gt_embed_ali'][train_num:]
 test_data['adj'] = total_data['adj'][train_num:]
 
-save_root = './data/'
+save_root = 'data/'
 if not os.path.exists(save_root):
     os.mkdir(save_root)
 
@@ -190,11 +175,3 @@ with open(filename,'wb') as f:
 filename = os.path.join(save_root, 'vocab_v2.pkl')
 with open(filename,'wb') as f:
     pickle.dump(vocab, f)
-    
-# filename = 'train_VG_v1.pkl'
-# with open(filename,'wb') as f:
-#     pickle.dump(train_data, f)
-# 
-# filename = 'test_VG_v1.pkl'
-# with open(filename,'wb') as f:
-#     pickle.dump(test_data, f)

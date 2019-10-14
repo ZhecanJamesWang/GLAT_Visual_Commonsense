@@ -14,7 +14,7 @@ import random
 # from nltk.corpus import stopwords
 
 class VG_data(Dataset):
-    def __init__(self, data_root='/home/haoxuan/code/pygcn/', status='train'):
+    def __init__(self, data_root='/data/', status='train'):
         super(VG_data, self).__init__()
 
 
@@ -22,6 +22,8 @@ class VG_data(Dataset):
             self.vocab = pickle.load(f, encoding='latin')
         self.vocab_encoder = self.vocab['encoder']
         self.vocab_decoder = self.vocab['decoder']
+        self.vocab_num = len(self.vocab_encoder.keys())
+        print('vocabulary number', self.vocab_num)
 
 #         encoder_path = "./model/encoder_bpe_40000.json"
 #         bpe_path = "./model/vocab_40000.bpe"
@@ -49,9 +51,9 @@ class VG_data(Dataset):
         #     self.rel_data = json.load(f)
 
         if self.status == 'train':
-            self.data_root = os.path.join(data_root, 'train_VG_v1.pkl')
+            self.data_root = os.path.join(data_root, 'train_VG_v2.pkl')
         else:
-            self.data_root = os.path.join(data_root, 'test_VG_v1.pkl')
+            self.data_root = os.path.join(data_root, 'test_VG_v2.pkl')
 
         with open(self.data_root,'rb') as f:
             self.data = pickle.load(f, encoding='latin')
@@ -78,11 +80,14 @@ class VG_data(Dataset):
         # pdb.set_trace()
         # print(idx)
 
-        return torch.from_numpy(np.array(gt_embed)).float(), torch.from_numpy(np.array(input_embed)).float(),\
+        return torch.from_numpy(np.array(gt_embed)).long(), torch.from_numpy(np.array(input_embed)).long(),\
                torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask))
 
     def __len__(self):
-        return len(self.data['input_embed'])
+        return len(self.data['gt_embed_ali'])
+
+    def vocabnum(self):
+        return self.vocab_num
 
 
 def encode_onehot(labels):

@@ -12,12 +12,13 @@ from torch import nn
 
 
 # from pygcn.utils import load_data, accuracy
-from models import GCN
 from data import VG_data
 from torch.utils.data import DataLoader
 from models import Ensemble_encoder
 import pdb
+import os
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -28,7 +29,7 @@ parser.add_argument('--fastmode', action='store_true', default=False,
 parser.add_argument('--seed', type=int, default=42, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.01,
+parser.add_argument('--lr', type=float, default=0.001,
                     help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=5e-4,
                     help='Weight decay (L2 loss on parameters).')
@@ -36,6 +37,8 @@ parser.add_argument('--weight_decay', type=float, default=5e-4,
 #                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.5,
                     help='Dropout rate (1 - keep probability).')
+parser.add_argument('--n_heads', type=int, default=8, help='Number of head attentions.')
+parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -45,9 +48,14 @@ args.GAT_num = 1
 args.Trans_num = 1
 args.fea_dim = 300
 args.nhid_gat = 100
-args.nhid_trans = 100
+args.nhid_trans = 300
+args.n_heads = 8
 
 device = 'cuda'
+
+home_path = os.getcwd()
+
+print(home_path)
 
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
@@ -56,20 +64,20 @@ if args.cuda:
 
 # Load data
 # adj, features, labels, idx_train, idx_val, idx_test = load_data()
-train_dataset = VG_data(status='train')
+train_dataset = VG_data(status='train', data_root=os.path.join(home_path, 'data'))
 train_loader = DataLoader(train_dataset, batch_size=1,shuffle = True,drop_last=False)
-test_dataset = VG_data(status='test')
+test_dataset = VG_data(status='test', data_root=os.path.join(home_path, 'data'))
 test_loader = DataLoader(test_dataset, batch_size=1,shuffle = True,drop_last=False)
 
-vocab_num = VG_data().vocab_num()
+vocab_num = train_dataset.vocabnum()
 
 # Model and optimizer
-model = Ensemble_encoder(vocab_num = vocab_num,
+model = Ensemble_encoder(vocab_num=vocab_num,
                          feat_dim=args.fea_dim,
                          nhid_gat=args.nhid_gat,
                          nhid_trans=args.nhid_trans,
                          dropout=args.dropout,
-                         nheads=args.nb_heads,
+                         nheads=args.n_heads,
                          alpha=args.alpha,
                          GAT_num=args.GAT_num,
                          Trans_num=args.Trans_num)
@@ -79,7 +87,8 @@ model = model.to(device=device)
 optimizer = optim.Adam(model.parameters(),
                        lr=args.lr, weight_decay=args.weight_decay)
 
-cri_rec = torch.nn.MSELoss()
+cri_rec = torch.nn.CrossEntropyLoss()
+# cri_rec = torch.nn.MSELoss()
 cri_rec = cri_rec.to(device = device)
 
 cri_con = torch.nn.CrossEntropyLoss()
@@ -100,11 +109,15 @@ def train(epoch):
         gt_embed = gt_embed.to(device=device)
         input_mask = input_mask.to(device=device)
 
-        if adj.size(0) == 1:
+        if adj.size(1) == 1:
             print('{} skip for 1 node'.format(i))
             continue
         else:
             pred_label, pred_connect, num_list = model(input_embed, adj)
+
+            # pdb.set_trace()
+            pred_label = pred_label.view(-1, pred_label.size(-1))
+            gt_embed = gt_embed.squeeze(-1).view(-1)
 
             loss_rec = cri_rec(pred_label, gt_embed)
             loss_con = cri_con(pred_connect,torch.cat((torch.ones(num_list[0]),torch.zeros(num_list[1])), 0).long().to(device=device))
@@ -126,7 +139,7 @@ def train(epoch):
 
             # loss_val = F.nll_loss(output[idx_val], labels[idx_val])
             # acc_val = accuracy(output[idx_val], labels[idx_val])
-            if (i+1) % 10000 == 0:
+            if (i+1) % 100 == 0:
                 print('Epoch: {:04d} [{}/83858]'.format(epoch, i),
                       'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
                       'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
@@ -151,22 +164,31 @@ def test(epoch):
     loss_totoal_con = 0
     num_sample = 0
 
-    for i, (input_embed, adj, gt_embed, mask_idx) in enumerate(test_loader):
-        input_embed = input_embed.squeeze(0)
-        adj = adj.squeeze(0)
-        gt_embed = gt_embed.squeeze(0)
-
+    for i, (gt_embed, input_embed, adj, input_mask) in enumerate(test_loader):
         input_embed = input_embed.to(device=device)
         adj = adj.to(device=device)
         gt_embed = gt_embed.to(device=device)
+        input_mask = input_mask.to(device=device)
 
-        if adj.size(0) == 1:
+        # print(input_embed.size())
+        # print(adj.size())
+        # print(gt_embed.size())
+
+        # input_embed = input_embed.to(device=device)
+        # adj = adj.to(device=device)
+        # gt_embed = gt_embed.to(device=device)
+
+        if adj.size(1) == 1:
             print('{} skip for 1 node'.format(i))
             continue
         else:
-            pred_reconst, pred_connect, num_list = model(input_embed, adj)
-            loss_rec = cri_rec(pred_reconst, gt_embed) 
+            pred_label, pred_connect, num_list = model(input_embed, adj)
+            pred_label = pred_label.view(-1, pred_label.size(-1))
+            gt_embed = gt_embed.squeeze(-1).view(-1)
+
+            loss_rec = cri_rec(pred_label, gt_embed)
             loss_con = cri_con(pred_connect,torch.cat((torch.ones(num_list[0]),torch.zeros(num_list[1])), 0).long().to(device=device))
+
             num_sample += 1
             loss_total_rec += loss_rec.item()
             loss_totoal_con += loss_con.item()

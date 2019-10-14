@@ -7,6 +7,7 @@ from torch.nn.modules.module import Module
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import pdb
 
 class Connect_Cls(Module):
     def __init__(self, in_features, mid_features, n_class, bias=True):
@@ -102,12 +103,12 @@ class ScaledDotProductAttention(nn.Module):
         attn = torch.bmm(q, k.transpose(1, 2))
         attn = attn / self.temperature
 
-        import pdb
-        print("mask.shape: ", mask.shape)
-        print("attn.shape: ", attn.shape)
-        print("q.shape: ", q.shape)
-        print("k.shape: ", k.shape)
-        pdb.set_trace()
+        # import pdb
+        # print("mask.shape: ", mask.shape)
+        # print("attn.shape: ", attn.shape)
+        # print("q.shape: ", q.shape)
+        # print("k.shape: ", k.shape)
+        # pdb.set_trace()
 
         if mask is not None:
             attn = attn.masked_fill(mask, -np.inf)
@@ -149,8 +150,6 @@ class MultiHeadAttention(nn.Module):
 
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
 
-        print("q.size(): ", q.size())
-
 
         sz_b, len_q, _ = q.size()
         sz_b, len_k, _ = k.size()
@@ -173,9 +172,9 @@ class MultiHeadAttention(nn.Module):
         k = k.permute(2, 0, 1, 3).contiguous().view(-1, len_k, d_k) # (n*b) x lk x dk
         v = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, d_v) # (n*b) x lv x dv
 
-        mask = mask.repeat(n_head, 1, 1) # (n*b) x .. x ..
-        output, attn = self.attention(q, k, v, mask=mask)
-        # output, attn = self.attention(q, k, v)
+        # mask = mask.repeat(n_head, 1, 1) # (n*b) x .. x ..
+        # output, attn = self.attention(q, k, v, mask=mask)
+        output, attn = self.attention(q, k, v)
 
         output = output.view(n_head, sz_b, len_q, d_v)
         output = output.permute(1, 2, 0, 3).contiguous().view(sz_b, len_q, -1) # b x lq x (n*dv)
@@ -216,14 +215,14 @@ class EncoderLayer(nn.Module):
         self.pos_ffn = PositionwiseFeedForward(d_model, d_inner, dropout=dropout)
 
     def forward(self, enc_input, non_pad_mask=None, slf_attn_mask=None):
-        # enc_output, enc_slf_attn = self.slf_attn(
-        #     enc_input, enc_input, enc_input)
         enc_output, enc_slf_attn = self.slf_attn(
-            enc_input, enc_input, enc_input, mask=slf_attn_mask)
+            enc_input, enc_input, enc_input)
+        # enc_output, enc_slf_attn = self.slf_attn(
+        #     enc_input, enc_input, enc_input, mask=slf_attn_mask)
         import pdb
         # print("non_pad_mask.shape: ", non_pad_mask.shape)
         # print("enc_output.shape: ", enc_output.shape)
-        enc_output *= non_pad_mask
+        # enc_output *= non_pad_mask
         # print("enc_output.shape: ", enc_output.shape)
         # print("non_pad_mask.shape: ", non_pad_mask.shape)
         # pdb.set_trace()
@@ -257,16 +256,20 @@ class GraphAttentionLayer(nn.Module):
         self.W.cuda()
 
     def forward(self, input, adj):
+        # pdb.set_trace()
+        h = torch.matmul(input, self.W)
+        # N = h.size()[0]
+        B = h.size()[0]
+        N = h.size()[1]
+        # D = h.size()[2]
 
-        h = torch.mm(input, self.W)
-        N = h.size()[0]
+        a_input = torch.cat([h.repeat(1, 1, N).view(B, N * N, -1), h.repeat(1, N, 1)], dim=2).view(B, N, -1, 2 * self.out_features)
 
-        a_input = torch.cat([h.repeat(1, N).view(N * N, -1), h.repeat(N, 1)], dim=1).view(N, -1, 2 * self.out_features)
-        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))
+        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(3))
 
         zero_vec = -9e15*torch.ones_like(e)
         attention = torch.where(adj > 0, e, zero_vec)
-        attention = F.softmax(attention, dim=1)
+        attention = F.softmax(attention, dim=2)
         attention = F.dropout(attention, self.dropout, training=self.training)
         h_prime = torch.matmul(attention, h)
 
@@ -274,6 +277,22 @@ class GraphAttentionLayer(nn.Module):
             return F.elu(h_prime)
         else:
             return h_prime
+
+
+        # a_input = torch.cat([h.repeat(1, N).view(N * N, -1), h.repeat(N, 1)], dim=1).view(N, -1, 2 * self.out_features)
+        #
+        # e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))
+        #
+        # zero_vec = -9e15*torch.ones_like(e)
+        # attention = torch.where(adj > 0, e, zero_vec)
+        # attention = F.softmax(attention, dim=1)
+        # attention = F.dropout(attention, self.dropout, training=self.training)
+        # h_prime = torch.matmul(attention, h)
+        #
+        # if self.concat:
+        #     return F.elu(h_prime)
+        # else:
+        #     return h_prime
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
