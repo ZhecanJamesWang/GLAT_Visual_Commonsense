@@ -2,8 +2,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 from layers import GraphConvolution, Connect_Cls, EncoderLayer, GraphAttentionLayer
 import torch
-import Constants
+# import Constants
 import pdb
+
+def get_non_pad_mask(seq, blank):
+    assert seq.dim() == 2
+    return seq.ne(blank).unsqueeze(-1).type(torch.float)
+
+
+def get_attn_key_pad_mask(seq_k, seq_q, blank):
+    ''' For masking out the padding part of key sequence. '''
+
+    # Expand to fit the shape of key query attention matrix.
+
+    len_q = seq_q.size(1)
+    padding_mask = seq_k.eq(blank)
+    padding_mask = padding_mask.unsqueeze(1).expand(-1, len_q, -1)  # b x lq x lk
+
+    return padding_mask
+
 
 class GAT(nn.Module):
     def __init__(self, nfeat, nhid, noutput, dropout, alpha, nheads):
@@ -17,12 +34,21 @@ class GAT(nn.Module):
 
         self.out_att = GraphAttentionLayer(nhid * nheads, noutput, dropout=dropout, alpha=alpha, concat=False)
 
-    def forward(self, x, adj):
+    def forward(self, x, adj, non_pad_mask):
+
         x = F.dropout(x, self.dropout, training=self.training)
         x = torch.cat([att(x, adj) for att in self.attentions], dim=2)
+
+        x *= non_pad_mask
+
         x = F.dropout(x, self.dropout, training=self.training)
         x = self.out_att(x, adj)
+
+        x *= non_pad_mask
+
         x = F.elu(x)
+
+
         return x
 
 
@@ -42,35 +68,18 @@ class GAT_Ensemble(nn.Module):
             model = GAT(nfeat, nhid, noutput, dropout, alpha, nheads)
             self.GATs.append(model)
 
-    def forward(self, fea, adj):
+    def forward(self, fea, adj, non_pad_mask):
 
         fea = fea.long()
         # pdb.set_trace()
 
         x = self.embed(fea)
-        x = x.squeeze(2)
+        # x = x.squeeze(2)
         # pdb.set_trace()
 
         for num in range(self.GAT_num):
-            x = self.GATs[num](x, adj)
+            x = self.GATs[num](x, adj, non_pad_mask)
         return x
-
-
-def get_non_pad_mask(seq):
-    assert seq.dim() == 3
-    return seq.ne(Constants.PAD).type(torch.float)
-
-
-def get_attn_key_pad_mask(seq_k, seq_q):
-    ''' For masking out the padding part of key sequence. '''
-
-    # Expand to fit the shape of key query attention matrix.
-
-    len_q = seq_q.size(1)
-    padding_mask = seq_k.eq(Constants.PAD)
-    padding_mask = padding_mask.unsqueeze(1).expand(-1, len_q, -1)  # b x lq x lk
-
-    return padding_mask
 
 
 class Encoder(nn.Module):
@@ -92,13 +101,13 @@ class Encoder(nn.Module):
             EncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout)
             for _ in range(n_layers)])
 
-    def forward(self, src_seq, src_pos, return_attns=False):
+    def forward(self, src_seq, src_pos, slf_attn_mask, non_pad_mask, return_attns=False):
 
         enc_slf_attn_list = []
 
         # -- Prepare masks
-        slf_attn_mask = get_attn_key_pad_mask(seq_k=src_seq, seq_q=src_seq)
-        non_pad_mask = get_non_pad_mask(src_seq)
+        # slf_attn_mask = get_attn_key_pad_mask(seq_k=src_seq, seq_q=src_seq)
+        # non_pad_mask = get_non_pad_mask(src_seq)
 
         # -- Forward
         # enc_output = self.src_word_emb(src_seq) + self.position_enc(src_pos)
@@ -107,12 +116,12 @@ class Encoder(nn.Module):
         # enc_output = torch.unsqueeze(enc_output, 0)
 
         for enc_layer in self.layer_stack:
-            # enc_output, enc_slf_attn = enc_layer(
-            #     enc_output,
-            #     non_pad_mask=non_pad_mask,
-            #     slf_attn_mask=slf_attn_mask)
             enc_output, enc_slf_attn = enc_layer(
-                enc_output)
+                enc_output,
+                non_pad_mask=non_pad_mask,
+                slf_attn_mask=slf_attn_mask)
+            # enc_output, enc_slf_attn = enc_layer(
+            #     enc_output)
             if return_attns:
                 enc_slf_attn_list += [enc_slf_attn]
 
@@ -136,9 +145,9 @@ class Transformer(nn.Module):
         'To facilitate the residual connections, \
          the dimensions of all module outputs shall be the same.'
 
-    def forward(self, src_seq):
+    def forward(self, src_seq, slf_attn_mask, non_pad_mask):
         src_pos = src_seq
-        enc_output, *_ = self.encoder(src_seq, src_pos)
+        enc_output, *_ = self.encoder(src_seq, src_pos, slf_attn_mask, non_pad_mask)
 
         return enc_output
 
@@ -158,9 +167,9 @@ class Transformer_Ensemble(nn.Module):
                                 n_head=n_head, d_k=d_k, d_v=d_v, dropout=dropout)
             self.Trans.append(model)
 
-    def forward(self, x):
+    def forward(self, x, slf_attn_mask, non_pad_mask):
         for num in range(self.Trans_num):
-            x = self.Trans[num](x)
+            x = self.Trans[num](x, slf_attn_mask, non_pad_mask)
         return x
 
 
@@ -177,7 +186,7 @@ class Pred_label(nn.Module):
 
 
 class Ensemble_encoder(nn.Module):
-    def __init__(self, vocab_num, GAT_num, Trans_num, feat_dim, nhid_gat, nhid_trans, dropout, alpha, nheads):
+    def __init__(self, vocab_num, GAT_num, Trans_num, feat_dim, nhid_gat, nhid_trans, dropout, alpha, nheads, blank):
         """Dense version of GAT."""
         super(Ensemble_encoder, self).__init__()
         print("initialize Encoder with GAT num ", GAT_num, " Bert num ", Trans_num)
@@ -192,13 +201,18 @@ class Ensemble_encoder(nn.Module):
 
         self.Pred_connect = Connect_Cls(nhid_trans, int(nhid_trans/2), 2)
 
-    def forward(self, fea, adj):
-        x = self.GAT_Ensemble(fea, adj)
+        self.blank = blank
 
-        x = self.Trans_Ensemble(x)
+    def forward(self, fea, adj):
+        slf_attn_mask = get_attn_key_pad_mask(seq_k=fea, seq_q=fea, blank=self.blank)
+        non_pad_mask = get_non_pad_mask(fea, blank=self.blank)
+
+        x = self.GAT_Ensemble(fea, adj, non_pad_mask)
+
+        x = self.Trans_Ensemble(x, slf_attn_mask, non_pad_mask)
 
         pred_label = self.Pred_label(x)
-        pred_edge, num_list = self.Pred_connect(x.squeeze(0), adj)
+        pred_edge, num_list = self.Pred_connect(x, adj)
 
         return pred_label, pred_edge, num_list
 

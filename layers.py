@@ -25,30 +25,50 @@ class Connect_Cls(Module):
         self.FC2 = nn.Linear(self.mid_features, self.n_class)
 
     def forward(self, input, adj):
-        conn = torch.nonzero(adj)
-        pos_input = []
-        conn_num = len(conn)
-        if conn_num != 0:
-            for i in range(conn_num):
-                pos_input.append(torch.cat([input[conn[i][0]], input[conn[i][1]]], dim=-1).unsqueeze(0))
-            pos_input = torch.cat(pos_input, dim=0)
-        else:
-            pos_input = torch.zeros(size=(0,0), device='cuda')
+        B = input.size(0)
+        N = input.size(1)
+        D = input.size(2)
 
-        neg_input = []
-        disconn = torch.nonzero(1-adj)
-        if len(conn) <= len(disconn):
-            disconn_num = len(conn) if len(conn) != 0 else 2
-        else:
-            disconn_num = len(disconn)
-        for i in range(disconn_num):
-            neg_input.append(torch.cat([input[disconn[i][0]], input[disconn[i][1]]], dim=-1).unsqueeze(0))
-        neg_input = torch.cat(neg_input, dim=0)
+        conn_fea = torch.cat([input.repeat(1, 1, N).view(B, N * N, -1), input.repeat(1, N, 1)], dim=2).view(B, N, -1, 2 * D) # (B, N, N, 2D)
+        conn_fea = conn_fea.view(B, -1, 2*D).view(-1, 2*D)
+        conn_adj = adj.view(B, -1).view(-1)
 
-        total_input = torch.cat((pos_input, neg_input), dim=0)
-        x = self.FC1(total_input)
+        pos_conn = torch.nonzero(conn_adj).squeeze(-1)
+        neg_conn = torch.nonzero(1-conn_adj).squeeze(-1)[:len(pos_conn)]
+
+        pos_fea = conn_fea[pos_conn]
+        neg_fea = conn_fea[neg_conn]
+        total_fea = torch.cat([pos_fea, neg_fea], dim=0)
+
+        # pdb.set_trace()
+
+        x = self.FC1(total_fea)
         x = self.FC2(x)
-        return x, [conn_num, disconn_num]
+
+        # conn = torch.nonzero(adj)
+        # pos_input = []
+        # conn_num = len(conn)
+        # if conn_num != 0:
+        #     for i in range(conn_num):
+        #         pos_input.append(torch.cat([input[conn[i][0]], input[conn[i][1]]], dim=-1).unsqueeze(0))
+        #     pos_input = torch.cat(pos_input, dim=0)
+        # else:
+        #     pos_input = torch.zeros(size=(0,0), device='cuda')
+        #
+        # neg_input = []
+        # disconn = torch.nonzero(1-adj)
+        # if len(conn) <= len(disconn):
+        #     disconn_num = len(conn) if len(conn) != 0 else 2
+        # else:
+        #     disconn_num = len(disconn)
+        # for i in range(disconn_num):
+        #     neg_input.append(torch.cat([input[disconn[i][0]], input[disconn[i][1]]], dim=-1).unsqueeze(0))
+        # neg_input = torch.cat(neg_input, dim=0)
+        #
+        # total_input = torch.cat((pos_input, neg_input), dim=0)
+        # x = self.FC1(total_input)
+        # x = self.FC2(x)
+        return x, [len(pos_conn), len(neg_conn)]
 
 
 class GraphConvolution(Module):
@@ -172,9 +192,9 @@ class MultiHeadAttention(nn.Module):
         k = k.permute(2, 0, 1, 3).contiguous().view(-1, len_k, d_k) # (n*b) x lk x dk
         v = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, d_v) # (n*b) x lv x dv
 
-        # mask = mask.repeat(n_head, 1, 1) # (n*b) x .. x ..
-        # output, attn = self.attention(q, k, v, mask=mask)
-        output, attn = self.attention(q, k, v)
+        mask = mask.repeat(n_head, 1, 1) # (n*b) x .. x ..
+        output, attn = self.attention(q, k, v, mask=mask)
+        # output, attn = self.attention(q, k, v)
 
         output = output.view(n_head, sz_b, len_q, d_v)
         output = output.permute(1, 2, 0, 3).contiguous().view(sz_b, len_q, -1) # b x lq x (n*dv)
@@ -215,14 +235,16 @@ class EncoderLayer(nn.Module):
         self.pos_ffn = PositionwiseFeedForward(d_model, d_inner, dropout=dropout)
 
     def forward(self, enc_input, non_pad_mask=None, slf_attn_mask=None):
-        enc_output, enc_slf_attn = self.slf_attn(
-            enc_input, enc_input, enc_input)
         # enc_output, enc_slf_attn = self.slf_attn(
-        #     enc_input, enc_input, enc_input, mask=slf_attn_mask)
-        import pdb
+        #     enc_input, enc_input, enc_input)
+        enc_output, enc_slf_attn = self.slf_attn(
+            enc_input, enc_input, enc_input, mask=slf_attn_mask)
+
+
+        # import pdb
         # print("non_pad_mask.shape: ", non_pad_mask.shape)
         # print("enc_output.shape: ", enc_output.shape)
-        # enc_output *= non_pad_mask
+        enc_output *= non_pad_mask
         # print("enc_output.shape: ", enc_output.shape)
         # print("non_pad_mask.shape: ", non_pad_mask.shape)
         # pdb.set_trace()
