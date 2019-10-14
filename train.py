@@ -94,7 +94,7 @@ def my_collate(batch):
     return [gt_embeds, input_embeds, adjs, input_masks]
 
 
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle = True, drop_last=False, collate_fn=my_collate)
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
 test_dataset = VG_data(status='test', data_root=os.path.join(home_path, 'data'))
 test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
 
@@ -115,15 +115,14 @@ model = Ensemble_encoder(vocab_num=vocab_num,
 
 model = torch.nn.DataParallel(model)
 model = model.to(device=device)
-optimizer = optim.Adam(model.parameters(),
-                       lr=args.lr, weight_decay=args.weight_decay)
+optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 cri_rec = torch.nn.CrossEntropyLoss()
-# cri_rec = torch.nn.MSELoss()
-cri_rec = cri_rec.to(device = device)
+cri_rec = cri_rec.to(device=device)
 
 cri_con = torch.nn.CrossEntropyLoss()
-cri_con = cri_con.to(device = device)
+cri_con = cri_con.to(device=device)
+
 
 def train(epoch):
     model.train()
@@ -137,8 +136,9 @@ def train(epoch):
         input_embed = input_embed.to(device=device)
         adj = adj.to(device=device)
         gt_embed = gt_embed.to(device=device)
-        input_mask = input_mask.to(device=device)
+        # input_mask = input_mask.to(device=device)
 
+        # keep the last dimension for word length option
         input_embed = input_embed.squeeze(-1)
         gt_embed = gt_embed.squeeze(-1)
 
@@ -147,13 +147,12 @@ def train(epoch):
             continue
         else:
             pred_label, pred_connect, num_list = model(input_embed, adj)
-
             pred_label = pred_label.view(-1, pred_label.size(-1))
             # gt_embed = gt_embed.squeeze(-1).view(-1)
             gt_embed = gt_embed.view(-1)
 
             loss_rec = cri_rec(pred_label, gt_embed)
-            loss_con = cri_con(pred_connect,torch.cat((torch.ones(num_list[0]),torch.zeros(num_list[1])), 0).long().to(device=device))
+            loss_con = cri_con(pred_connect, torch.cat((torch.ones(num_list[0]), torch.zeros(num_list[1])), 0).long().to(device=device))
             loss = loss_rec + loss_con
 
             optimizer.zero_grad()
@@ -189,6 +188,7 @@ def train(epoch):
       # 'acc_val: {:.4f}'.format(acc_val.item()),
       'time: {:.4f}s'.format(time.time() - t))
 
+
 def test(epoch):
     model.eval()
     t = time.time()
@@ -201,7 +201,7 @@ def test(epoch):
         input_embed = input_embed.to(device=device)
         adj = adj.to(device=device)
         gt_embed = gt_embed.to(device=device)
-        input_mask = input_mask.to(device=device)
+        # input_mask = input_mask.to(device=device)
 
         input_embed = input_embed.squeeze(-1)
         gt_embed = gt_embed.squeeze(-1)
