@@ -90,11 +90,7 @@ class VG_data(Dataset):
         return self.vocab_num
 
     def get_blank(self):
-<<<<<<< HEAD
-        return self.vocab_encoder["<blank>"+"</w>"]
-=======
         return self.vocab_encoder["<blank>" + "</w>"]
->>>>>>> 7459aa852bf516aef1d2544bcf7752384b458543
 
 def encode_onehot(labels):
     classes = set(labels)

@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from models import Ensemble_encoder
 import pdb
 import os
+import utils
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 # Training settings
@@ -125,7 +126,6 @@ cri_rec = cri_rec.to(device = device)
 cri_con = torch.nn.CrossEntropyLoss()
 cri_con = cri_con.to(device = device)
 
-<<<<<<< HEAD
 blank_idx = train_dataset.get_blank()
 def my_collate(batch):
     max_length = 0
@@ -149,14 +149,14 @@ def my_collate(batch):
     input_masks = torch.cat(input_masks, axis=0)
     return [gt_embeds, input_embeds, adjs, input_masks]
 
-=======
->>>>>>> 7459aa852bf516aef1d2544bcf7752384b458543
 def train(epoch):
     model.train()
     t = time.time()
     loss_total_rec = 0
     loss_totoal_con = 0
     num_sample = 0
+    correct_node_num = 0
+    correct_edge_num = 0
 
     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(train_loader):
 
@@ -190,6 +190,9 @@ def train(epoch):
             loss_total_rec += loss_rec.item()
             loss_totoal_con += loss_con.item()
 
+            acc_node_iter, sample_node_iter= utils.accuracy(pred_label, gt_embed)
+            acc_edge_iter, sample_edge_iter= utils.accuracy(pred_connect, torch.cat((torch.ones(num_list[0]),torch.zeros(num_list[1])), 0).long())
+
             # if not args.fastmode:
             #     # Evaluate validation set performance separately,
             #     # deactivates dropout during validation run.
@@ -202,7 +205,8 @@ def train(epoch):
                 print('Epoch: {:04d} [{}/83858]'.format(epoch, i),
                       'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
                       'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
-                      # 'acc_train: {:.4f}'.format(acc_train.item()),
+                      'node_acc_train: {:.4f}'.format(acc_train.item()),
+                      'edge_acc_train: {:.4f}'.format(acc_train.item()),
                       # 'loss_val: {:.4f}'.format(loss_val.item()),
                       # 'acc_val: {:.4f}'.format(acc_val.item()),
                       'time: {:.4f}s'.format(time.time() - t))
