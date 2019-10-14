@@ -94,6 +94,28 @@ cri_rec = cri_rec.to(device = device)
 cri_con = torch.nn.CrossEntropyLoss()
 cri_con = cri_con.to(device = device)
 
+blank_idx = train_dataset.get_blank()
+def my_collate(batch):
+    max_length = 0
+    for item in batch:
+        max_length = max(max_length, item[0].size(0))
+    print('max length in batch is', max_length)
+    gt_embeds = []
+    input_embeds = []
+    adjs = []
+    input_masks = []
+    for i, (gt_embed, input_embed, adj, input_mask) in enumerate(batch):
+        gt_embeds.append(torch.cat((gt_embed, blank_idx*torch.ones((max_length-gt_embed.size(0), 1), dtype=torch.long)),1).unsqueeze(0))
+        input_embeds.append(torch.cat((input_embed, blank_idx*torch.ones((max_length-input_embed.size(0), 1), dtype=torch.long)),1).unsqueeze(0))
+        new_adj = torch.cat((adj, torch.zeros((max_length-adj.size(0), adj.size(1)), dtype=torch.long)), axis=0)
+        new_adj = torch.cat((new_adj, torch.zeros((new_adj.size(0), max_length-new_adj.size(1)), dtype=torch.long)), axis=1)
+        adjs.append(new_adj.unsqueeze(0))
+        input_masks.append(torch.cat((input_masks, blank_idx*torch.ones((max_length-input_masks.size(0), 1), dtype=torch.int)),1).unsqueeze(0))
+    gt_embeds = torch.cat(gt_embeds, axis=0)
+    input_embeds = torch.cat(input_embeds, axis=0)
+    adjs = torch.cat(adjs, axis=0)
+    input_masks = torch.cat(input_masks, axis=0)
+    return [gt_embeds, input_embeds, adjs, input_masks]
 
 def train(epoch):
     model.train()
