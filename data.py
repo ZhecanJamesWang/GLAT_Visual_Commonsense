@@ -66,7 +66,7 @@ class VG_data(Dataset):
 
         mask_num = math.ceil(gt_embed.shape[0] * 0.10)
         mask_idx = random.sample(range(0, gt_embed.shape[0]), mask_num)
-        input_mask = np.zeros((gt_embed.shape[0],), dtype=int)
+        input_mask = np.zeros((gt_embed.shape[0],1), dtype=int)
         input_mask[mask_idx] = 1
 
         input_embed = copy.deepcopy(gt_embed)
@@ -89,6 +89,8 @@ class VG_data(Dataset):
     def vocabnum(self):
         return self.vocab_num
 
+    def get_blank(self):
+        return self.vocab_encoder["<blank>" + "</w>"]
 
 def encode_onehot(labels):
     classes = set(labels)
