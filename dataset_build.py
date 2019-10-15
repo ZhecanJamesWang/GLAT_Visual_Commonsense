@@ -65,7 +65,7 @@ obj_len = 0
 max_length = 0
 fix_vocabulary = 1
 
-for idx in tqdm(range(len(rel_data[:1000]))):
+for idx in tqdm(range(len(rel_data[:5]))):
     single_rel_data = rel_data[idx]['relationships']
     if len(single_rel_data) == 0:
         continue
@@ -77,7 +77,8 @@ for idx in tqdm(range(len(rel_data[:1000]))):
         pred_flg = 1
         sub_flg = 1
         obj_flg = 1
-        if len(text_encoder.encode([relationship['predicate']])[0]) != 1 and relationship['predicate'] not in new_categories:
+        # if len(text_encoder.encode([relationship['predicate']])[0]) != 1 and relationship['predicate'] not in new_categories:
+        if relationship['predicate'] not in new_categories:
             new_categories += [relationship['predicate'].lower()]
 
         pred_len = len(text_encoder.encode([relationship['predicate']])[0])
@@ -88,7 +89,8 @@ for idx in tqdm(range(len(rel_data[:1000]))):
         idx_pred = len(nodes) - 1 - nodes[::-1].index(relationship['predicate'].lower())
 
         if relationship['subject']['object_id'] not in node_idxs:
-            if len(text_encoder.encode([relationship['subject']['name']])[0]) != 1 and relationship['subject']['name'] not in new_categories:
+            # if len(text_encoder.encode([relationship['subject']['name']])[0]) != 1 and relationship['subject']['name'] not in new_categories:
+            if relationship['subject']['name'] not in new_categories:
                 new_categories += [relationship['subject']['name'].lower()]
 
             subj_len = len(text_encoder.encode([relationship['subject']['name']])[0])
@@ -101,7 +103,8 @@ for idx in tqdm(range(len(rel_data[:1000]))):
             idx_subject = node_idxs.index(relationship['subject']['object_id'])
 
         if relationship['object']['object_id'] not in node_idxs:
-            if len(text_encoder.encode([relationship['object']['name']])[0]) != 1 and relationship['object']['name'] not in new_categories:
+            # if len(text_encoder.encode([relationship['object']['name']])[0]) != 1 and relationship['object']['name'] not in new_categories:
+            if relationship['object']['name'] not in new_categories:
                 new_categories += [relationship['object']['name'].lower()]
 
             obj_len = len(text_encoder.encode([relationship['object']['name']])[0])
@@ -123,6 +126,7 @@ for idx in tqdm(range(len(rel_data[:1000]))):
     total_data['node_name'].append(nodes)
 
 print('number of new categories', len(new_categories))
+
 for category in new_categories:
     if category not in encoder.keys() and category+'</w>' not in encoder.keys():
         text_encoder.decoder[len(encoder)] = category + '</w>'
@@ -164,14 +168,15 @@ vocab = {}
 vocab['encoder'] = text_encoder.encoder
 vocab['decoder'] = text_encoder.decoder
 
-filename = os.path.join(save_root, 'train_VG_v2.pkl')
-with open(filename,'wb') as f:
+filename = os.path.join(save_root, 'train_VG_v3.pkl')
+with open(filename, 'wb') as f:
     pickle.dump(train_data, f)
 
-filename = os.path.join(save_root, 'test_VG_v2.pkl')
-with open(filename,'wb') as f:
+filename = os.path.join(save_root, 'test_VG_v3.pkl')
+with open(filename, 'wb') as f:
     pickle.dump(test_data, f)
 
-filename = os.path.join(save_root, 'vocab_v2.pkl')
-with open(filename,'wb') as f:
+filename = os.path.join(save_root, 'vocab_v3.pkl')
+with open(filename, 'wb') as f:
     pickle.dump(vocab, f)
+

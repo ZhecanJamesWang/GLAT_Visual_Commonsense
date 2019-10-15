@@ -18,7 +18,7 @@ from models import Ensemble_encoder
 import pdb
 import os
 import utils
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -154,8 +154,8 @@ def train(epoch):
     loss_total_rec = 0
     loss_totoal_con = 0
     num_sample = 0
-    correct_node_num = 0
-    correct_edge_num = 0
+    node_acc = utils.Counter()
+    edge_acc = utils.Counter()
 
     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(train_loader):
 
@@ -176,9 +176,9 @@ def train(epoch):
             pred_label = pred_label.view(-1, pred_label.size(-1))
             # gt_embed = gt_embed.squeeze(-1).view(-1)
             gt_embed = gt_embed.view(-1)
-
+            gt_edge = torch.cat((torch.ones(num_list[0]), torch.zeros(num_list[1])), 0).long()
             loss_rec = cri_rec(pred_label, gt_embed)
-            loss_con = cri_con(pred_connect, torch.cat((torch.ones(num_list[0]), torch.zeros(num_list[1])), 0).long().to(device=device))
+            loss_con = cri_con(pred_connect, gt_edge.to(device=device))
             loss = loss_rec + loss_con
 
             optimizer.zero_grad()
@@ -189,8 +189,8 @@ def train(epoch):
             loss_total_rec += loss_rec.item()
             loss_totoal_con += loss_con.item()
 
-            acc_node_iter, sample_node_iter= utils.accuracy(pred_label, gt_embed)
-            acc_edge_iter, sample_edge_iter= utils.accuracy(pred_connect, torch.cat((torch.ones(num_list[0]),torch.zeros(num_list[1])), 0).long())
+            node_acc.add(pred_label, gt_embed)
+            edge_acc.add(pred_connect, gt_edge)
 
             # if not args.fastmode:
             #     # Evaluate validation set performance separately,
@@ -204,8 +204,8 @@ def train(epoch):
                 print('Epoch: {:04d} [{}/83858]'.format(epoch, i),
                       'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
                       'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
-                      'node_acc_train: {:.4f}'.format(acc_train.item()),
-                      'edge_acc_train: {:.4f}'.format(acc_train.item()),
+                      'node_acc_train: {:.4f}'.format(node_acc.mean()),
+                      'edge_acc_train: {:.4f}'.format(edge_acc.mean()),
                       # 'loss_val: {:.4f}'.format(loss_val.item()),
                       # 'acc_val: {:.4f}'.format(acc_val.item()),
                       'time: {:.4f}s'.format(time.time() - t))
@@ -213,6 +213,8 @@ def train(epoch):
     print('Epoch Finished: {:04d}'.format(epoch),
       'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
       'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
+          'node_acc_train: {:.4f}'.format(node_acc.mean()),
+          'edge_acc_train: {:.4f}'.format(edge_acc.mean()),
       # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
@@ -226,6 +228,8 @@ def test(epoch):
     loss_total_rec = 0
     loss_totoal_con = 0
     num_sample = 0
+    node_acc = utils.Counter()
+    edge_acc = utils.Counter()
 
     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(test_loader):
         input_embed = input_embed.to(device=device)
@@ -250,17 +254,23 @@ def test(epoch):
             pred_label, pred_connect, num_list = model(input_embed, adj)
             pred_label = pred_label.view(-1, pred_label.size(-1))
             gt_embed = gt_embed.view(-1)
+            gt_edge = torch.cat((torch.ones(num_list[0]), torch.zeros(num_list[1])), 0).long()
 
             loss_rec = cri_rec(pred_label, gt_embed)
-            loss_con = cri_con(pred_connect,torch.cat((torch.ones(num_list[0]),torch.zeros(num_list[1])), 0).long().to(device=device))
+            loss_con = cri_con(pred_connect, gt_edge.to(device=device))
 
             num_sample += 1
             loss_total_rec += loss_rec.item()
             loss_totoal_con += loss_con.item()
 
+            node_acc.add(pred_label, gt_embed)
+            edge_acc.add(pred_connect, gt_edge)
+
     print('Epoch Finished: {:04d}'.format(epoch),
       'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
       'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
+          'node_acc_train: {:.4f}'.format(node_acc.mean()),
+          'edge_acc_train: {:.4f}'.format(edge_acc.mean()),
       # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),

@@ -69,11 +69,24 @@ def normalize(mx):
     return mx
 
 
-def accuracy(output, labels):
-    preds = output.max(1)[1].type_as(labels)
-    correct = preds.eq(labels).double()
-    correct = correct.sum()
-    return correct / len(labels), len(labels)
+class Counter(object):
+    def __init__(self):
+        self.corr_cumul = 0
+        self.num_cumul = 0
+
+    def cal_accur(self, pred, labels):
+        preds = pred.max(1)[1].type_as(labels)
+        correct = preds.eq(labels).double()
+        correct = correct.sum()
+        return correct, len(labels)
+
+    def add(self, pred, labels):
+        corr, num = self.cal_accur(pred, labels)
+        self.corr_cumul += corr
+        self.num_cumul += num
+
+    def mean(self):
+        return float(self.corr_cumul)/self.num_cumul
 
 
 def sparse_mx_to_torch_sparse_tensor(sparse_mx):
