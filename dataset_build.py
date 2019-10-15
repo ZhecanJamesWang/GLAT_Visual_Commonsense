@@ -14,8 +14,9 @@ import os
 
 home_path = os.environ['HOME']
 
-data_root = os.path.join(home_path, 'data/VG')
-filename = 'relationships.json'
+# data_root = os.path.join(home_path, 'data/VG')
+data_root = os.path.join(home_path, 'data/top_150_50_new')
+filename = 'train.json'
 
 status = 'train'
 
@@ -65,7 +66,7 @@ obj_len = 0
 max_length = 0
 fix_vocabulary = 1
 
-for idx in tqdm(range(len(rel_data[:5]))):
+for idx in tqdm(range(len(rel_data[:5000]))):
     single_rel_data = rel_data[idx]['relationships']
     if len(single_rel_data) == 0:
         continue
@@ -88,33 +89,39 @@ for idx in tqdm(range(len(rel_data[:5]))):
         adj = np.append(adj, np.array([adj.shape[0]*[0]]).transpose(), axis=1)
         idx_pred = len(nodes) - 1 - nodes[::-1].index(relationship['predicate'].lower())
 
-        if relationship['subject']['object_id'] not in node_idxs:
+        # original version ==> clean version
+        # relationship['subject']['object_id'] ==> relationship['sub_id']
+        # relationship['subject']['name'] ==> rel_data[idx]['objects'][relationship['sub_id']]['class']
+        if relationship['sub_id'] not in node_idxs:
             # if len(text_encoder.encode([relationship['subject']['name']])[0]) != 1 and relationship['subject']['name'] not in new_categories:
-            if relationship['subject']['name'] not in new_categories:
-                new_categories += [relationship['subject']['name'].lower()]
+            if rel_data[idx]['objects'][relationship['sub_id']]['class'] not in new_categories:
+                new_categories += [rel_data[idx]['objects'][relationship['sub_id']]['class'].lower()]
 
-            subj_len = len(text_encoder.encode([relationship['subject']['name']])[0])
-            node_idxs.append(relationship['subject']['object_id'])
-            nodes += [relationship['subject']['name'].lower()]
+            subj_len = len(text_encoder.encode([rel_data[idx]['objects'][relationship['sub_id']]['class']])[0])
+            node_idxs.append(relationship['sub_id'])
+            nodes += [rel_data[idx]['objects'][relationship['sub_id']]['class'].lower()]
             adj = np.append(adj, [adj.shape[1]*[0]], axis=0)
             adj = np.append(adj, np.array([adj.shape[0]*[0]]).transpose(), axis=1)
-            idx_subject = node_idxs.index(relationship['subject']['object_id'])
+            idx_subject = node_idxs.index(relationship['sub_id'])
         else:
-            idx_subject = node_idxs.index(relationship['subject']['object_id'])
+            idx_subject = node_idxs.index(relationship['sub_id'])
 
-        if relationship['object']['object_id'] not in node_idxs:
+        # original version ==> clean version
+        # relationship['object']['object_id'] ==> relationship['obj_id']
+        # relationship['object']['name'] ==> rel_data[idx]['objects'][relationship['obj_id']]['class']
+        if relationship['obj_id'] not in node_idxs:
             # if len(text_encoder.encode([relationship['object']['name']])[0]) != 1 and relationship['object']['name'] not in new_categories:
-            if relationship['object']['name'] not in new_categories:
-                new_categories += [relationship['object']['name'].lower()]
+            if rel_data[idx]['objects'][relationship['obj_id']]['class'] not in new_categories:
+                new_categories += [rel_data[idx]['objects'][relationship['obj_id']]['class'].lower()]
 
-            obj_len = len(text_encoder.encode([relationship['object']['name']])[0])
-            node_idxs.append(relationship['object']['object_id'])
-            nodes += [relationship['object']['name'].lower()]
+            obj_len = len(text_encoder.encode([rel_data[idx]['objects'][relationship['obj_id']]['class']])[0])
+            node_idxs.append(relationship['obj_id'])
+            nodes += [rel_data[idx]['objects'][relationship['obj_id']]['class'].lower()]
             adj = np.append(adj, [adj.shape[1]*[0]], axis=0)
             adj = np.append(adj, np.array([adj.shape[0]*[0]]).transpose(), axis=1)
-            idx_object = node_idxs.index(relationship['object']['object_id'])
+            idx_object = node_idxs.index(relationship['obj_id'])
         else:
-            idx_object = node_idxs.index(relationship['object']['object_id'])
+            idx_object = node_idxs.index(relationship['obj_id'])
 
         if pred_flg and sub_flg:
             adj[idx_subject][idx_pred] = 1
@@ -126,6 +133,8 @@ for idx in tqdm(range(len(rel_data[:5]))):
     total_data['node_name'].append(nodes)
 
 print('number of new categories', len(new_categories))
+
+pdb.set_trace()
 
 for category in new_categories:
     if category not in encoder.keys() and category+'</w>' not in encoder.keys():
