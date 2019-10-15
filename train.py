@@ -18,6 +18,8 @@ from models import Ensemble_encoder
 import pdb
 import os
 import utils
+import torch.optim.lr_scheduler as lr_scheduler
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
@@ -51,6 +53,7 @@ args.nhid_gat = 100
 args.nhid_trans = 300
 args.n_heads = 8
 args.batch_size = 5
+args.weight_decay = 0
 
 global blank_idx
 
@@ -116,7 +119,9 @@ model = Ensemble_encoder(vocab_num=vocab_num,
 
 model = torch.nn.DataParallel(model)
 model = model.to(device=device)
+
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[30, 60, 90, 120, 150], gamma=0.5)
 
 cri_rec = torch.nn.CrossEntropyLoss()
 cri_rec = cri_rec.to(device=device)
@@ -126,6 +131,8 @@ cri_con = cri_con.to(device=device)
 
 
 blank_idx = train_dataset.get_blank()
+
+
 def my_collate(batch):
     max_length = 0
     for item in batch:
@@ -148,6 +155,7 @@ def my_collate(batch):
     input_masks = torch.cat(input_masks, axis=0)
     return [gt_embeds, input_embeds, adjs, input_masks]
 
+
 def train(epoch):
     model.train()
     t = time.time()
@@ -158,6 +166,8 @@ def train(epoch):
     edge_acc = utils.Counter()
 
     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(train_loader):
+
+        # pdb.set_trace()
 
         input_embed = input_embed.to(device=device)
         adj = adj.to(device=device)
@@ -200,17 +210,17 @@ def train(epoch):
 
             # loss_val = F.nll_loss(output[idx_val], labels[idx_val])
             # acc_val = accuracy(output[idx_val], labels[idx_val])
-            if (i+1) % 100 == 0:
-                print('Epoch: {:04d} [{}/83858]'.format(epoch, i),
-                      'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
-                      'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
-                      'node_acc_train: {:.4f}'.format(node_acc.mean()),
-                      'edge_acc_train: {:.4f}'.format(edge_acc.mean()),
-                      # 'loss_val: {:.4f}'.format(loss_val.item()),
-                      # 'acc_val: {:.4f}'.format(acc_val.item()),
-                      'time: {:.4f}s'.format(time.time() - t))
+            # if (i) % 10 == 0:
+            #     print('Train Epoch: {:04d} [{}/83858]'.format(epoch, i),
+            #           'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
+            #           'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
+            #           'node_acc_train: {:.4f}'.format(node_acc.mean()),
+            #           'edge_acc_train: {:.4f}'.format(edge_acc.mean()),
+            #           # 'loss_val: {:.4f}'.format(loss_val.item()),
+            #           # 'acc_val: {:.4f}'.format(acc_val.item()),
+            #           'time: {:.4f}s'.format(time.time() - t))
 
-    print('Epoch Finished: {:04d}'.format(epoch),
+    print('Train Epoch Finished: {:04d}'.format(epoch),
       'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
       'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
           'node_acc_train: {:.4f}'.format(node_acc.mean()),
@@ -266,11 +276,11 @@ def test(epoch):
             node_acc.add(pred_label, gt_embed)
             edge_acc.add(pred_connect, gt_edge)
 
-    print('Epoch Finished: {:04d}'.format(epoch),
+    print('Test Epoch Finished: {:04d}'.format(epoch),
       'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
       'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
-          'node_acc_train: {:.4f}'.format(node_acc.mean()),
-          'edge_acc_train: {:.4f}'.format(edge_acc.mean()),
+          'node_acc_test: {:.4f}'.format(node_acc.mean()),
+          'edge_acc_test: {:.4f}'.format(edge_acc.mean()),
       # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
@@ -284,7 +294,10 @@ def test(epoch):
 # Train model
 t_total = time.time()
 for epoch in range(args.epochs):
+    scheduler.step()
+
     train(epoch)
+
     if (epoch+1) % 5 == 0:
         test(epoch)
 

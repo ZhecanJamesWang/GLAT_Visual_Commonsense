@@ -9,67 +9,6 @@ import torch.nn.functional as F
 import numpy as np
 import pdb
 
-class Connect_Cls(Module):
-    def __init__(self, in_features, mid_features, n_class, bias=True):
-        super(Connect_Cls, self).__init__()
-        self.in_features = in_features
-        self.mid_features = mid_features
-        self.n_class = n_class
-        # self.balanced_ratio = 0.5
-        self.FC1 = nn.Sequential(
-            nn.Linear(2*self.in_features, self.mid_features),
-            nn.BatchNorm1d(self.mid_features),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5)
-        )
-        self.FC2 = nn.Linear(self.mid_features, self.n_class)
-
-    def forward(self, input, adj):
-        B = input.size(0)
-        N = input.size(1)
-        D = input.size(2)
-
-        conn_fea = torch.cat([input.repeat(1, 1, N).view(B, N * N, -1), input.repeat(1, N, 1)], dim=2).view(B, N, -1, 2 * D) # (B, N, N, 2D)
-        conn_fea = conn_fea.view(B, -1, 2*D).view(-1, 2*D)
-        conn_adj = adj.view(B, -1).view(-1)
-
-        pos_conn = torch.nonzero(conn_adj).squeeze(-1)
-        neg_conn = torch.nonzero(1-conn_adj).squeeze(-1)[:len(pos_conn)]
-
-        pos_fea = conn_fea[pos_conn]
-        neg_fea = conn_fea[neg_conn]
-        total_fea = torch.cat([pos_fea, neg_fea], dim=0)
-
-        # pdb.set_trace()
-
-        x = self.FC1(total_fea)
-        x = self.FC2(x)
-
-        # conn = torch.nonzero(adj)
-        # pos_input = []
-        # conn_num = len(conn)
-        # if conn_num != 0:
-        #     for i in range(conn_num):
-        #         pos_input.append(torch.cat([input[conn[i][0]], input[conn[i][1]]], dim=-1).unsqueeze(0))
-        #     pos_input = torch.cat(pos_input, dim=0)
-        # else:
-        #     pos_input = torch.zeros(size=(0,0), device='cuda')
-        #
-        # neg_input = []
-        # disconn = torch.nonzero(1-adj)
-        # if len(conn) <= len(disconn):
-        #     disconn_num = len(conn) if len(conn) != 0 else 2
-        # else:
-        #     disconn_num = len(disconn)
-        # for i in range(disconn_num):
-        #     neg_input.append(torch.cat([input[disconn[i][0]], input[disconn[i][1]]], dim=-1).unsqueeze(0))
-        # neg_input = torch.cat(neg_input, dim=0)
-        #
-        # total_input = torch.cat((pos_input, neg_input), dim=0)
-        # x = self.FC1(total_input)
-        # x = self.FC2(x)
-        return x, [len(pos_conn), len(neg_conn)]
-
 
 class GraphConvolution(Module):
     """

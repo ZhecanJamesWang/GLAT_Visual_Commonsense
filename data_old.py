@@ -18,15 +18,11 @@ class VG_data(Dataset):
         super(VG_data, self).__init__()
 
 
-        with open(os.path.join(data_root, 'vocab_clean_50.pkl'), 'rb') as f:
+        with open(os.path.join(data_root, 'vocab_v2.pkl'), 'rb') as f:
             self.vocab = pickle.load(f, encoding='latin')
-        # self.vocab_encoder = self.vocab['encoder']
-        # self.vocab_decoder = self.vocab['decoder']
-        # self.vocab_num = len(self.vocab_encoder.keys())
-        self.vocab_num = len(self.vocab)
-
-        self.mask_prob = 0
-
+        self.vocab_encoder = self.vocab['encoder']
+        self.vocab_decoder = self.vocab['decoder']
+        self.vocab_num = len(self.vocab_encoder.keys())
         print('vocabulary number', self.vocab_num)
 
 #         encoder_path = "./model/encoder_bpe_40000.json"
@@ -55,9 +51,9 @@ class VG_data(Dataset):
         #     self.rel_data = json.load(f)
 
         if self.status == 'train':
-            self.data_root = os.path.join(data_root, 'train_VG_clean_50.pkl')
+            self.data_root = os.path.join(data_root, 'train_VG_v2.pkl')
         else:
-            self.data_root = os.path.join(data_root, 'test_VG_clean_50.pkl')
+            self.data_root = os.path.join(data_root, 'test_VG_v2.pkl')
 
         with open(self.data_root,'rb') as f:
             self.data = pickle.load(f, encoding='latin')
@@ -68,18 +64,13 @@ class VG_data(Dataset):
         gt_embed = self.data['gt_embed_ali'][idx]
         adj = self.data['adj'][idx]
 
-        mask_num = math.ceil(gt_embed.shape[0] * self.mask_prob)
+        mask_num = math.ceil(gt_embed.shape[0] * 0.10)
         mask_idx = random.sample(range(0, gt_embed.shape[0]), mask_num)
-        input_mask = np.zeros((gt_embed.shape[0], 1), dtype=int)
+        input_mask = np.zeros((gt_embed.shape[0],1), dtype=int)
         input_mask[mask_idx] = 1
 
         input_embed = copy.deepcopy(gt_embed)
-
-        if len(mask_idx) != 0:
-            input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"))
-            # input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"+"</w>"))
-
-        # input_embed[mask_idx] = np.array(self.vocab_encoder["<MASK>"+"</w>"])
+        input_embed[mask_idx] = np.array(self.vocab_encoder["<MASK>"+"</w>"])
         # input_embed[mask_idx] = np.array(self.text_encoder.encoder["<MASK>"])
 
         # pdb.set_trace()
@@ -99,8 +90,7 @@ class VG_data(Dataset):
         return self.vocab_num
 
     def get_blank(self):
-        # return self.vocab_encoder["<blank>" + "</w>"]
-        return self.vocab.index("<blank>")
+        return self.vocab_encoder["<blank>" + "</w>"]
 
 def encode_onehot(labels):
     classes = set(labels)
