@@ -18,6 +18,7 @@ class VG_data(Dataset):
         super(VG_data, self).__init__()
 
 
+
         with open(os.path.join(data_root, 'vocab_clean_5.pkl'), 'rb') as f:
             self.vocab = pickle.load(f, encoding='latin')
         # self.vocab_encoder = self.vocab['encoder']

@@ -80,6 +80,7 @@ def preprocess_data(new_categories, rel_data):
     total_data['node_name'] = []
     total_data['gt_embed_ali'] = []
 
+
     for idx in tqdm(range(len(rel_data[:5]))):
         single_rel_data = rel_data[idx]['relationships']
         if len(single_rel_data) == 0:
@@ -160,6 +161,7 @@ test_data, new_categories = preprocess_data(new_categories, rel_data_test)
 save_root = 'data/'
 if not os.path.exists(save_root):
     os.mkdir(save_root)
+
 filename = os.path.join(save_root, 'train_VG_clean_5.pkl')
 with open(filename, 'wb') as f:
     pickle.dump(train_data, f)
@@ -169,6 +171,7 @@ with open(filename, 'wb') as f:
     pickle.dump(test_data, f)
 
 filename = os.path.join(save_root, 'vocab_clean_5.pkl')
+
 with open(filename, 'wb') as f:
     pickle.dump(new_categories, f)
 
