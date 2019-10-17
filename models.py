@@ -198,16 +198,17 @@ class Connect_Cls(nn.Module):
         conn_fea = conn_fea.view(B, -1, 2*D).view(-1, 2*D)
         conn_adj = adj.view(B, -1).view(-1)
 
-        pos_conn = torch.nonzero(conn_adj).squeeze(-1)
-        neg_conn = torch.nonzero(1-conn_adj).squeeze(-1)[:len(pos_conn)]
-
-        pos_fea = conn_fea[pos_conn]
-        neg_fea = conn_fea[neg_conn]
-        total_fea = torch.cat([pos_fea, neg_fea], dim=0)
+        # pos_conn = torch.nonzero(conn_adj).squeeze(-1)
+        # neg_conn = torch.nonzero(1-conn_adj).squeeze(-1)[:len(pos_conn)]
+        #
+        # pos_fea = conn_fea[pos_conn]
+        # neg_fea = conn_fea[neg_conn]
+        # total_fea = torch.cat([pos_fea, neg_fea], dim=0)
 
         # pdb.set_trace()
 
-        x = self.FC(total_fea)
+        x = self.FC(conn_fea)
+        # x = self.FC(total_fea)
 
         # conn = torch.nonzero(adj)
         # pos_input = []
@@ -232,7 +233,8 @@ class Connect_Cls(nn.Module):
         # total_input = torch.cat((pos_input, neg_input), dim=0)
         # x = self.FC1(total_input)
         # x = self.FC2(x)
-        return x, [len(pos_conn), len(neg_conn)]
+        # return x, [len(pos_conn), len(neg_conn)]
+        return x
 
 
 class Pred_label(nn.Module):
@@ -277,7 +279,7 @@ class Ensemble_encoder(nn.Module):
         x = self.Trans_Ensemble(x, slf_attn_mask, non_pad_mask)
 
         pred_label = self.Pred_label(x)
-        pred_edge, num_list = self.Pred_connect(x, adj)
+        pred_edge = self.Pred_connect(x, adj)
 
-        return pred_label, pred_edge, num_list
+        return pred_label, pred_edge
 
