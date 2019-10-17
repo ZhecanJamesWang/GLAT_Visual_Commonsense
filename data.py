@@ -18,13 +18,13 @@ class VG_data(Dataset):
         super(VG_data, self).__init__()
 
 
-        with open(os.path.join(data_root, 'vocab_clean_whole.pkl'), 'rb') as f:
+
+        with open(os.path.join(data_root, 'vocab_clean_5.pkl'), 'rb') as f:
             self.vocab = pickle.load(f, encoding='latin')
         # self.vocab_encoder = self.vocab['encoder']
         # self.vocab_decoder = self.vocab['decoder']
         # self.vocab_num = len(self.vocab_encoder.keys())
         self.vocab_num = len(self.vocab)
-
         self.mask_prob = 0
 
         print('vocabulary number', self.vocab_num)
@@ -55,9 +55,9 @@ class VG_data(Dataset):
         #     self.rel_data = json.load(f)
 
         if self.status == 'train':
-            self.data_root = os.path.join(data_root, 'train_VG_clean_whole.pkl')
+            self.data_root = os.path.join(data_root, 'train_VG_clean_5.pkl')
         else:
-            self.data_root = os.path.join(data_root, 'test_VG_clean_whole.pkl')
+            self.data_root = os.path.join(data_root, 'test_VG_clean_5.pkl')
 
         with open(self.data_root,'rb') as f:
             self.data = pickle.load(f, encoding='latin')
