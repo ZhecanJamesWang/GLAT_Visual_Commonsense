@@ -20,7 +20,7 @@ import os
 import utils
 import torch.optim.lr_scheduler as lr_scheduler
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -29,7 +29,7 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
 parser.add_argument('--fastmode', action='store_true', default=False,
                     help='Validate during training pass.')
 parser.add_argument('--seed', type=int, default=42, help='Random seed.')
-parser.add_argument('--epochs', type=int, default=200,
+parser.add_argument('--epochs', type=int, default=800,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='Initial learning rate.')
@@ -52,7 +52,7 @@ args.fea_dim = 300
 args.nhid_gat = 100
 args.nhid_trans = 300
 args.n_heads = 8
-args.batch_size = 5
+args.batch_size = 1
 args.weight_decay = 0
 
 global blank_idx
@@ -73,34 +73,36 @@ if args.cuda:
 train_dataset = VG_data(status='train', data_root=os.path.join(home_path, 'data'))
 
 blank_idx = train_dataset.get_blank()
+#
+#
+# def my_collate(batch):
+#     max_length = 0
+#     for item in batch:
+#         max_length = max(max_length, item[0].size(0))
+#     # print('max length in batch is', max_length)
+#     gt_embeds = []
+#     input_embeds = []
+#     adjs = []
+#     input_masks = []
+#     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(batch):
+#         gt_embeds.append(torch.cat((gt_embed, blank_idx*torch.ones((max_length-gt_embed.size(0), 1), dtype=torch.long)), 0).unsqueeze(0))
+#         input_embeds.append(torch.cat((input_embed, blank_idx*torch.ones((max_length-input_embed.size(0), 1), dtype=torch.long)), 0).unsqueeze(0))
+#         new_adj = torch.cat((adj, torch.zeros((max_length-adj.size(0), adj.size(1)), dtype=torch.float)), 0)
+#         new_adj = torch.cat((new_adj, torch.zeros((new_adj.size(0), max_length-new_adj.size(1)), dtype=torch.float)), 1)
+#         adjs.append(new_adj.unsqueeze(0))
+#         input_masks.append(torch.cat((input_mask, torch.zeros((max_length-input_mask.size(0),1), dtype=torch.long)), 0).unsqueeze(0))
+#     gt_embeds = torch.cat(gt_embeds, 0)
+#     input_embeds = torch.cat(input_embeds, 0)
+#     adjs = torch.cat(adjs, 0)
+#     input_masks = torch.cat(input_masks, 0)
+#     return [gt_embeds, input_embeds, adjs, input_masks]
 
 
-def my_collate(batch):
-    max_length = 0
-    for item in batch:
-        max_length = max(max_length, item[0].size(0))
-    # print('max length in batch is', max_length)
-    gt_embeds = []
-    input_embeds = []
-    adjs = []
-    input_masks = []
-    for i, (gt_embed, input_embed, adj, input_mask) in enumerate(batch):
-        gt_embeds.append(torch.cat((gt_embed, blank_idx*torch.ones((max_length-gt_embed.size(0), 1), dtype=torch.long)), 0).unsqueeze(0))
-        input_embeds.append(torch.cat((input_embed, blank_idx*torch.ones((max_length-input_embed.size(0), 1), dtype=torch.long)), 0).unsqueeze(0))
-        new_adj = torch.cat((adj, torch.zeros((max_length-adj.size(0), adj.size(1)), dtype=torch.float)), 0)
-        new_adj = torch.cat((new_adj, torch.zeros((new_adj.size(0), max_length-new_adj.size(1)), dtype=torch.float)), 1)
-        adjs.append(new_adj.unsqueeze(0))
-        input_masks.append(torch.cat((input_mask, torch.zeros((max_length-input_mask.size(0),1), dtype=torch.long)), 0).unsqueeze(0))
-    gt_embeds = torch.cat(gt_embeds, 0)
-    input_embeds = torch.cat(input_embeds, 0)
-    adjs = torch.cat(adjs, 0)
-    input_masks = torch.cat(input_masks, 0)
-    return [gt_embeds, input_embeds, adjs, input_masks]
-
-
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
+# train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 test_dataset = VG_data(status='test', data_root=os.path.join(home_path, 'data'))
-test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
+# test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
+test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 
 
 vocab_num = train_dataset.vocabnum()
@@ -130,32 +132,6 @@ cri_con = torch.nn.CrossEntropyLoss()
 cri_con = cri_con.to(device=device)
 
 
-blank_idx = train_dataset.get_blank()
-
-
-def my_collate(batch):
-    max_length = 0
-    for item in batch:
-        max_length = max(max_length, item[0].size(0))
-    print('max length in batch is', max_length)
-    gt_embeds = []
-    input_embeds = []
-    adjs = []
-    input_masks = []
-    for i, (gt_embed, input_embed, adj, input_mask) in enumerate(batch):
-        gt_embeds.append(torch.cat((gt_embed, blank_idx*torch.ones((max_length-gt_embed.size(0), 1), dtype=torch.long)),1).unsqueeze(0))
-        input_embeds.append(torch.cat((input_embed, blank_idx*torch.ones((max_length-input_embed.size(0), 1), dtype=torch.long)),1).unsqueeze(0))
-        new_adj = torch.cat((adj, torch.zeros((max_length-adj.size(0), adj.size(1)), dtype=torch.long)), axis=0)
-        new_adj = torch.cat((new_adj, torch.zeros((new_adj.size(0), max_length-new_adj.size(1)), dtype=torch.long)), axis=1)
-        adjs.append(new_adj.unsqueeze(0))
-        input_masks.append(torch.cat((input_masks, blank_idx*torch.ones((max_length-input_masks.size(0), 1), dtype=torch.int)),1).unsqueeze(0))
-    gt_embeds = torch.cat(gt_embeds, axis=0)
-    input_embeds = torch.cat(input_embeds, axis=0)
-    adjs = torch.cat(adjs, axis=0)
-    input_masks = torch.cat(input_masks, axis=0)
-    return [gt_embeds, input_embeds, adjs, input_masks]
-
-
 def train(epoch):
     model.train()
     t = time.time()
@@ -167,7 +143,6 @@ def train(epoch):
 
     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(train_loader):
 
-        # pdb.set_trace()
 
         input_embed = input_embed.to(device=device)
         adj = adj.to(device=device)

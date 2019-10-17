@@ -26,7 +26,7 @@ class GAT(nn.Module):
     def __init__(self, nfeat, nhid, noutput, dropout, alpha, nheads):
         """Dense version of GAT."""
         super(GAT, self).__init__()
-        self.dropout = dropout
+        # self.dropout = dropout
 
         self.attentions = [GraphAttentionLayer(nfeat, nhid, dropout=dropout, alpha=alpha, concat=True) for _ in range(nheads)]
         for i, attention in enumerate(self.attentions):
@@ -36,15 +36,15 @@ class GAT(nn.Module):
 
     def forward(self, x, adj, non_pad_mask):
 
-        x = F.dropout(x, self.dropout, training=self.training)
+        # x = F.dropout(x, self.dropout, training=self.training)
         x = torch.cat([att(x, adj) for att in self.attentions], dim=2)
 
-        x *= non_pad_mask
+        # x *= non_pad_mask
 
-        x = F.dropout(x, self.dropout, training=self.training)
+        # x = F.dropout(x, self.dropout, training=self.training)
         x = self.out_att(x, adj)
 
-        x *= non_pad_mask
+        # x *= non_pad_mask
 
         x = F.elu(x)
 
@@ -64,9 +64,9 @@ class GAT_Ensemble(nn.Module):
         # print(type(nfeat))
         self.embed = nn.Embedding(vocab_num, nfeat)
 
-        for num in range(self.GAT_num):
-            model = GAT(nfeat, nhid, noutput, dropout, alpha, nheads)
-            self.GATs.append(model)
+        # for num in range(self.GAT_num):
+        model = GAT(nfeat, nhid, noutput, dropout, alpha, nheads)
+        self.GATs.append(model)
 
     def forward(self, fea, adj, non_pad_mask):
 
@@ -77,8 +77,9 @@ class GAT_Ensemble(nn.Module):
         # x = x.squeeze(2)
         # pdb.set_trace()
 
-        for num in range(self.GAT_num):
-            x = self.GATs[num](x, adj, non_pad_mask)
+        # for num in range(self.GAT_num):
+        num = 0
+        x = self.GATs[num](x, adj, non_pad_mask)
         return x
 
 
@@ -95,7 +96,7 @@ class Encoder(nn.Module):
         # self.src_word_emb = nn.Embedding(
         #     n_src_vocab, d_word_vec, padding_idx=Constants.PAD)
 
-        self.position_enc = 0
+        # self.position_enc = 0
 
         self.layer_stack = nn.ModuleList([
             EncoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout)
@@ -116,12 +117,12 @@ class Encoder(nn.Module):
         # enc_output = torch.unsqueeze(enc_output, 0)
 
         for enc_layer in self.layer_stack:
-            enc_output, enc_slf_attn = enc_layer(
-                enc_output,
-                non_pad_mask=non_pad_mask,
-                slf_attn_mask=slf_attn_mask)
             # enc_output, enc_slf_attn = enc_layer(
-            #     enc_output)
+            #     enc_output,
+            #     non_pad_mask=non_pad_mask,
+            #     slf_attn_mask=slf_attn_mask)
+            enc_output, enc_slf_attn = enc_layer(
+                enc_output)
             if return_attns:
                 enc_slf_attn_list += [enc_slf_attn]
 
@@ -260,7 +261,11 @@ class Ensemble_encoder(nn.Module):
 
         self.Trans_Ensemble = Transformer_Ensemble(Trans_num, d_word_vec=nhid_trans, d_model=nhid_trans)
 
-        self.Pred_label = Pred_label(self.GAT_Ensemble)
+        self.embed = nn.Embedding(vocab_num, feat_dim)
+
+        # self.Pred_label = Pred_label(self.GAT_Ensemble)
+        self.Pred_label = Pred_label(self)
+
         print("nhid_trans: ", nhid_trans)
         print("int(nhid_trans/2): ", int(nhid_trans/2))
 
@@ -268,12 +273,16 @@ class Ensemble_encoder(nn.Module):
 
         self.blank = blank
 
+
     def forward(self, fea, adj):
         slf_attn_mask = get_attn_key_pad_mask(seq_k=fea, seq_q=fea, blank=self.blank)
         non_pad_mask = get_non_pad_mask(fea, blank=self.blank)
 
-        x = self.GAT_Ensemble(fea, adj, non_pad_mask)
+        # non_pad_mask = None
+        # slf_attn_mask = None
 
+        x = self.embed(fea)
+        # x = self.GAT_Ensemble(fea, adj, non_pad_mask)
         x = self.Trans_Ensemble(x, slf_attn_mask, non_pad_mask)
 
         pred_label = self.Pred_label(x)
