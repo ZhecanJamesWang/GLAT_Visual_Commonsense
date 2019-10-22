@@ -26,7 +26,7 @@ import datetime
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -52,18 +52,18 @@ args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 # ToDo: hyperparameters connect with command line later
-args.GAT_num = 3
+args.GAT_num = 3 # increase attention multiple head parallel or in series
 args.Trans_num = 3
 args.fea_dim = 300
-args.nhid_gat = 100
+args.nhid_gat = 100   #statt with 300
 args.nhid_trans = 300
-args.n_heads = 8
+args.n_heads = 8  # maybe cause inbalance between gat and trans complication, maybe make this 1 later when comparing with gat
 args.batch_size = 30
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
 # args.lr = 0.00001 * args.batch_size
-args.step_size = 7
+args.step_size = 15 # tuning this number, maybe change this to adaptive learning rate in the future depending on the loss
 record_file_name = date + "_{}g_{}t_concat_no_init_mask.txt".format(args.GAT_num, args.Trans_num)
 
 # args.weight_decay = 1e-4
