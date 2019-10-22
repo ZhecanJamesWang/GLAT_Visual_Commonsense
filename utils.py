@@ -5,8 +5,8 @@ import ftfy
 import json
 import spacy
 import torch
-
 from tqdm import tqdm
+import pdb
 
 
 def encode_onehot(labels):
@@ -70,24 +70,44 @@ def normalize(mx):
 
 
 class Counter(object):
-    def __init__(self):
-        self.corr_cumul = 0
-        self.num_cumul = 0
-
-    def cal_accur(self, pred, labels):
-        preds = pred.max(1)[1].type_as(labels)
-        correct = preds.eq(labels).double()
-        correct = correct.sum()
-        return correct, len(labels)
+    def __init__(self, classes=2):
+        # self.corr_cumul = 0
+        # self.num_cumul = 0
+        self.classes = classes
+        self.correct = [0] * self.classes
+        self.num_pred = [0] * self.classes
+        self.num_label = [0] * self.classes
 
     def add(self, pred, labels):
-        corr, num = self.cal_accur(pred, labels)
-        self.corr_cumul += corr
-        self.num_cumul += num
+        preds = pred.max(1)[1].type_as(labels)
 
-    def mean(self):
-        return float(self.corr_cumul)/self.num_cumul
+        acc = preds == labels
 
+        for i in range(self.classes):
+            self.correct[i] += (preds[acc] == i).sum()
+            # self.correct[i] += preds[preds == i].eq(labels[labels == i]).double()
+            self.num_pred[i] += len(preds[preds == i])
+            self.num_label[i] += len(labels[labels == i])
+        # correct.append(correct.sum())
+        # return correct, len(labels)
+
+    # def add(self, pred, labels):
+    #     corr, num = self.cal_accur(pred, labels)
+    #     self.corr_cumul += corr
+    #     self.num_cumul += num
+
+    def class_acc(self):
+        # print("self.correct: ", self.correct)
+        # print("np.asarray(self.num_pred): ", np.asarray(self.num_pred))
+        return list(self.correct/np.asarray(self.num_pred))
+
+    def overall_acc(self):
+        # print("sum(self.correct): ", sum(self.correct))
+        # print("sum(self.num_pred)： ", sum(self.num_pred))
+        return float(sum(self.correct))/sum(self.num_pred)
+
+    def recall(self):
+        return list(self.correct/np.asarray(self.num_label))
 
 def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     """Convert a scipy sparse matrix to a torch sparse tensor."""

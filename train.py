@@ -20,9 +20,13 @@ import os
 import utils
 import torch.optim.lr_scheduler as lr_scheduler
 import copy
+import random
+import datetime
 
+now = datetime.datetime.now()
+date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -48,16 +52,23 @@ args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 # ToDo: hyperparameters connect with command line later
-args.GAT_num = 1
-args.Trans_num = 1
+args.GAT_num = 3
+args.Trans_num = 3
 args.fea_dim = 300
 args.nhid_gat = 100
 args.nhid_trans = 300
 args.n_heads = 8
-# args.batch_size = 3
+args.batch_size = 30
+args.mini_node_num = 40
+args.weight_decay = 5e-4
+args.lr = 0.0001
+# args.lr = 0.00001 * args.batch_size
+args.step_size = 7
+record_file_name = date + "_{}g_{}t_concat_no_init_mask.txt".format(args.GAT_num, args.Trans_num)
+
 # args.weight_decay = 1e-4
-args.batch_size = 1
-args.weight_decay = 0
+
+args.outdir = "log/"
 
 global blank_idx
 
@@ -78,11 +89,46 @@ train_dataset = VG_data(status='train', data_root=os.path.join(home_path, 'data'
 
 blank_idx = train_dataset.get_blank()
 
+global records
+global records_count
+
+
+records = ""
+records_count = 0
+fc = False
+
+print("record_file_name: ", record_file_name)
+
+def write_to_file(file_name, content):
+    fh = open(file_name, "a")
+    fh.write(content)
+    fh.close
+    content = ""
+    return content
+
+
+def save_to_record(content):
+    global records
+    global records_count
+
+    records += (content + "\n")
+    records_count += 1
+
+    file_name = args.outdir + record_file_name
+
+    if records_count % 1 == 0:
+        write_to_file(file_name, records)
+        records = ""
+
 
 def my_collate(batch):
     max_length = 0
-    for item in batch:
-        max_length = max(max_length, item[0].size(0))
+    remove_list = []
+    for i, item in enumerate(batch):
+        if item[0].size(0) >= args.mini_node_num:
+            remove_list.append(i)
+        else:
+            max_length = max(max_length, item[0].size(0))
     # print('max length in batch is', max_length)
     max_length = max_length + 1
     gt_embeds = []
@@ -91,22 +137,26 @@ def my_collate(batch):
     input_masks = []
     pad_masks = []
     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(batch):
-        # print(i)
-        gt_embeds.append(torch.cat((gt_embed, blank_idx*torch.ones(max_length-gt_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
-        input_embeds.append(torch.cat((input_embed, blank_idx*torch.ones(max_length-input_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
-        # pdb.set_trace()
-        new_adj = torch.cat((adj, torch.zeros(max_length-adj.size(0), adj.size(1), dtype=torch.float)), 0)
-        new_adj = torch.cat((new_adj, torch.zeros(new_adj.size(0), max_length-new_adj.size(1), dtype=torch.float)), 1)
-        # pdb.set_trace()
-        adjs.append(new_adj.unsqueeze(0))
-        input_masks.append(torch.cat((input_mask, torch.zeros(max_length-input_mask.size(0),1, dtype=torch.long)), 0).unsqueeze(0))
-        # pdb.set_trace()
-        pad_masks.append(torch.cat((torch.zeros_like(gt_embed), torch.ones(max_length-gt_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
+        if i not in remove_list:
+            # print(i)
+            gt_embeds.append(torch.cat((gt_embed, blank_idx*torch.ones(max_length-gt_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
+            input_embeds.append(torch.cat((input_embed, blank_idx*torch.ones(max_length-input_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
+            # pdb.set_trace()
+            new_adj = torch.cat((adj, torch.zeros(max_length-adj.size(0), adj.size(1), dtype=torch.float)), 0)
+            new_adj = torch.cat((new_adj, torch.zeros(new_adj.size(0), max_length-new_adj.size(1), dtype=torch.float)), 1)
+            # pdb.set_trace()
+            adjs.append(new_adj.unsqueeze(0))
+            input_masks.append(torch.cat((input_mask, torch.zeros(max_length-input_mask.size(0),1, dtype=torch.long)), 0).unsqueeze(0))
+            # pdb.set_trace()
+            pad_masks.append(torch.cat((torch.zeros_like(gt_embed), torch.ones(max_length-gt_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
     gt_embeds = torch.cat(gt_embeds, 0)
     input_embeds = torch.cat(input_embeds, 0)
     adjs = torch.cat(adjs, 0)
     input_masks = torch.cat(input_masks, 0)
     pad_masks = torch.cat(pad_masks, 0)
+    if max_length > 100:
+        print('max_length:', max_length)
+        save_to_record("".join(['max_length:', str(max_length)]))
     return [gt_embeds, input_embeds, adjs, input_masks, pad_masks]
 
 
@@ -132,22 +182,21 @@ def get_gt_edge(pad_masks, adj):
     bal_neg_mask = copy.deepcopy(neg_mask)
     if len(torch.nonzero(neg_mask)) > len(torch.nonzero(pos_mask)):
         num_pos = len(torch.nonzero(pos_mask))
-        bal_neg_mask[torch.nonzero(neg_mask)[num_pos:]] = 0
+        num_neg = len(torch.nonzero(neg_mask))
+        mask = random.sample(range(0, num_neg), num_neg - num_pos)
+        bal_neg_mask[torch.nonzero(neg_mask)[mask]] = 0
 
     return torch.nonzero(pos_mask).squeeze(-1), torch.nonzero(neg_mask).squeeze(-1), torch.nonzero(bal_neg_mask).squeeze(-1), torch.nonzero(effective_mask).squeeze(-1)
 
     # torch.cat((pad_masks.repeat(1, N).view(B, N * N), pad_masks.repeat(1, N, 1)), dim=2).view(B, N, -1, 2 * D)
 
 
-
-
-
 train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
 # train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 
 test_dataset = VG_data(status='test', data_root=os.path.join(home_path, 'data'))
-# test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
-test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
+test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, collate_fn=my_collate)
+# test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
 
 
 vocab_num = train_dataset.vocabnum()
@@ -162,18 +211,22 @@ model = Ensemble_encoder(vocab_num=vocab_num,
                          alpha=args.alpha,
                          GAT_num=args.GAT_num,
                          Trans_num=args.Trans_num,
-                         blank=blank_idx)
+                         blank=blank_idx,
+                         fc=fc)
 
-model = torch.nn.DataParallel(model)
 model = model.to(device=device)
+model = nn.DataParallel(model)
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[30, 60, 90, 120, 150], gamma=0.5)
+# scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[30, 60, 90, 120, 150], gamma=0.5)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
 
-cri_rec = torch.nn.CrossEntropyLoss()
+# cri_rec = torch.nn.CrossEntropyLoss()
+cri_rec = torch.nn.NLLLoss()
 cri_rec = cri_rec.to(device=device)
 
-cri_con = torch.nn.CrossEntropyLoss()
+# cri_con = torch.nn.CrossEntropyLoss()
+cri_con = torch.nn.NLLLoss()
 cri_con = cri_con.to(device=device)
 
 
@@ -185,22 +238,24 @@ def train(epoch):
     loss_total_rec = 0
     loss_totoal_con = 0
     num_sample = 0
-    node_acc = utils.Counter()
-    edge_acc = utils.Counter()
+    node_acc = utils.Counter(classes=vocab_num)
+    node_acc_mask = utils.Counter(classes=vocab_num)
+    edge_acc_train = utils.Counter()
+    edge_acc_eff = utils.Counter()
 
     for i, (gt_embed, input_embed, adj, input_mask, pad_masks) in enumerate(train_loader):
-
 
         input_embed = input_embed.to(device=device)
         adj = adj.to(device=device)
         gt_embed = gt_embed.to(device=device)
         pad_masks = pad_masks.to(device=device)
-        # input_mask = input_mask.to(device=device)
+        input_mask = input_mask.to(device=device)
 
         # keep the last dimension for word length option
         input_embed = input_embed.squeeze(-1)
         gt_embed = gt_embed.squeeze(-1)
         pad_masks = pad_masks.squeeze(-1)
+        input_mask = input_mask.squeeze(-1)
 
         if adj.size(1) == 1:
             print('{} skip for 1 node'.format(i))
@@ -222,9 +277,14 @@ def train(epoch):
             # pdb.set_trace()
             pred_label_eff = pred_label[pad_masks.view(-1)==0]
             gt_embed_eff = gt_embed[pad_masks.view(-1)==0]
+            pred_label_mask = pred_label[input_mask.view(-1)==1]
+            gt_embed_mask = gt_embed[input_mask.view(-1)==1]
+
             loss_rec = cri_rec(pred_label_eff, gt_embed_eff)
             loss_con = cri_con(pred_connect_train, gt_edge_train.to(device=device))
+            # loss_con = cri_con(pred_connect_eff, gt_edge_eff.to(device=device))
             loss = loss_rec + loss_con
+            # loss = loss_rec
 
             optimizer.zero_grad()
             loss.backward()
@@ -235,7 +295,9 @@ def train(epoch):
             loss_totoal_con += loss_con.item()
 
             node_acc.add(pred_label_eff, gt_embed_eff)
-            edge_acc.add(pred_connect_eff, gt_edge_eff)
+            node_acc_mask.add(pred_label_mask, gt_embed_mask)
+            edge_acc_eff.add(pred_connect_eff, gt_edge_eff)
+            edge_acc_train.add(pred_connect_train, gt_edge_train)
 
             # if not args.fastmode:
             #     # Evaluate validation set performance separately,
@@ -246,25 +308,62 @@ def train(epoch):
             # loss_val = F.nll_loss(output[idx_val], labels[idx_val])
             # acc_val = accuracy(output[idx_val], labels[idx_val])
             if (i+1) % 1000 == 0:
-                print('Train Epoch: {:04d} [{}/{}]'.format(epoch, i, len(train_loader)),
-                      'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
-                      'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
-                      'node_acc_train: {:.4f}'.format(node_acc.mean()),
-                      'edge_acc_train: {:.4f}'.format(edge_acc.mean()),
-                      # 'loss_val: {:.4f}'.format(loss_val.item()),
-                      # 'acc_val: {:.4f}'.format(acc_val.item()),
-                      'time: {:.4f}s'.format(time.time() - t))
+                print('Train Epoch: {:04d} [{}/{}] '.format(epoch, i, len(train_loader)),
+                      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+                      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+                      'node_acc_train: {:.4f} '.format(node_acc.overall_acc()),
+                      'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+                      'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
+                      'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
+                      'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                                                                    edge_acc_eff.class_acc()[1]),
+                      'edge_acc_eff_recall: {:.4f} '.format(edge_acc_eff.recall()[0]),
+                      'time: {:.4f}s '.format(time.time() - t))
+                # 'loss_val: {:.4f}'.format(loss_val.item()),
+                # 'acc_val: {:.4f}'.format(acc_val.item()),
+                save_to_record("".join(['Train Epoch: {:04d} [{}/{}] '.format(epoch, i, len(train_loader)),
+                      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+                      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+                      'node_acc_train: {:.4f} '.format(node_acc.overall_acc()),
+                      'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+                      'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
+                      'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
+                      'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                                                                    edge_acc_eff.class_acc()[1]),
+                      'edge_acc_eff_recall: {:.4f} '.format(edge_acc_eff.recall()[0]),
+                      'time: {:.4f}s '.format(time.time() - t)]))
+                # 'loss_val: {:.4f}'.format(loss_val.item()),
+                # 'acc_val: {:.4f}'.format(acc_val.item()),
+        torch.cuda.empty_cache()
 
-    print('Train Epoch Finished: {:04d}'.format(epoch),
-      'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
-      'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
-          'node_acc_train: {:.4f}'.format(node_acc.mean()),
-          'edge_acc_train: {:.4f}'.format(edge_acc.mean()),
+    print('Train Epoch Finished: {:04d} '.format(epoch),
+      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+          'node_acc_train: {:.4f} '.format(node_acc.overall_acc()),
+          'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+          'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
+          'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
+          'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                                                        edge_acc_eff.class_acc()[1]),
+          'edge_acc_eff_recall: {:.4f} '.format(edge_acc_eff.recall()[0]),
       # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
-      'time: {:.4f}s'.format(time.time() - t))
-
+      'time: {:.4f}s '.format(time.time() - t))
+    save_to_record("".join(['Train Epoch Finished: {:04d} '.format(epoch),
+      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+          'node_acc_train: {:.4f} '.format(node_acc.overall_acc()),
+          'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+          'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
+          'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
+          'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                                                        edge_acc_eff.class_acc()[1]),
+          'edge_acc_eff_recall: {:.4f} '.format(edge_acc_eff.recall()[0]),
+      # 'acc_train: {:.4f}'.format(acc_train.item()),
+      # 'loss_val: {:.4f}'.format(loss_val.item()),
+      # 'acc_val: {:.4f}'.format(acc_val.item()),
+      'time: {:.4f}s '.format(time.time() - t)]))
 
 def test(epoch):
     model.eval()
@@ -273,7 +372,8 @@ def test(epoch):
     loss_total_rec = 0
     loss_totoal_con = 0
     num_sample = 0
-    node_acc = utils.Counter()
+    node_acc = utils.Counter(classes=vocab_num)
+    node_acc_mask = utils.Counter(classes=vocab_num)
     edge_acc = utils.Counter()
 
     for i, (gt_embed, input_embed, adj, input_mask, pad_masks) in enumerate(test_loader):
@@ -281,12 +381,14 @@ def test(epoch):
         adj = adj.to(device=device)
         gt_embed = gt_embed.to(device=device)
         pad_masks = pad_masks.to(device=device)
+        input_mask = input_mask.to(device=device)
 
         # input_mask = input_mask.to(device=device)
 
         input_embed = input_embed.squeeze(-1)
         gt_embed = gt_embed.squeeze(-1)
         pad_masks = pad_masks.squeeze(-1)
+        input_mask = input_mask.squeeze(-1)
 
         if adj.size(1) == 1:
             print('{} skip for 1 node'.format(i))
@@ -298,6 +400,8 @@ def test(epoch):
             gt_embed = gt_embed.view(-1)
             pos_mask, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj)
             # pdb.set_trace()
+            pred_label_mask = pred_label[input_mask.view(-1)==1]
+            gt_embed_mask = gt_embed[input_mask.view(-1)==1]
 
             pred_connect_eff = torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
             gt_edge_eff = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(neg_mask))), 0).long()
@@ -312,19 +416,37 @@ def test(epoch):
             loss_total_rec += loss_rec.item()
             loss_totoal_con += loss_con.item()
 
+            node_acc_mask.add(pred_label_mask, gt_embed_mask)
             node_acc.add(pred_label_eff, gt_embed_eff)
             edge_acc.add(pred_connect_eff, gt_edge_eff)
+        torch.cuda.empty_cache()
 
-    print('Test Epoch Finished: {:04d}'.format(epoch),
-      'loss_rec: {:.4f}'.format(loss_total_rec/num_sample),
-      'loss_con: {:.4f}'.format(loss_totoal_con/num_sample),
-          'node_acc_test: {:.4f}'.format(node_acc.mean()),
-          'edge_acc_test: {:.4f}'.format(edge_acc.mean()),
+    print('Test Epoch Finished: {:04d} '.format(epoch),
+      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+          'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
+          'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+          'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
+          'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
+                                                        edge_acc.class_acc()[1]),
+          'edge_acc_eff_recall: {:.4f} '.format(edge_acc.recall()[0]),
       # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
-      'time: {:.4f}s'.format(time.time() - t))
-
+      'time: {:.4f}s '.format(time.time() - t))
+    save_to_record("".join(['Test Epoch Finished: {:04d} '.format(epoch),
+      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+          'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
+          'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+          'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
+          'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
+                                                        edge_acc.class_acc()[1]),
+          'edge_acc_eff_recall: {:.4f} '.format(edge_acc.recall()[0]),
+      # 'acc_train: {:.4f}'.format(acc_train.item()),
+      # 'loss_val: {:.4f}'.format(loss_val.item()),
+      # 'acc_val: {:.4f}'.format(acc_val.item()),
+      'time: {:.4f}s '.format(time.time() - t)]))
     # print("Test set results:",
     #         'loss_rec: {:.4f}'.format(loss_rec.item()),
     #         'loss_con: {:.4f}'.format(loss_con.item()))
@@ -332,6 +454,9 @@ def test(epoch):
 
 # Train model
 t_total = time.time()
+
+save_to_record("")
+
 for epoch in range(args.epochs):
     scheduler.step()
 

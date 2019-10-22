@@ -17,15 +17,15 @@ class VG_data(Dataset):
     def __init__(self, data_root='/data/', status='train'):
         super(VG_data, self).__init__()
 
+        data_num = 10000
 
-
-        with open(os.path.join(data_root, 'vocab_clean_5.pkl'), 'rb') as f:
+        with open(os.path.join(data_root, 'vocab_clean_{}.pkl'.format(str(data_num))), 'rb') as f:
             self.vocab = pickle.load(f, encoding='latin')
         # self.vocab_encoder = self.vocab['encoder']
         # self.vocab_decoder = self.vocab['decoder']
         # self.vocab_num = len(self.vocab_encoder.keys())
         self.vocab_num = len(self.vocab)
-        self.mask_prob = 0
+        self.mask_prob = 0.1
 
         print('vocabulary number', self.vocab_num)
 
@@ -55,9 +55,9 @@ class VG_data(Dataset):
         #     self.rel_data = json.load(f)
 
         if self.status == 'train':
-            self.data_root = os.path.join(data_root, 'train_VG_clean_5.pkl')
+            self.data_root = os.path.join(data_root, 'train_VG_clean_{}.pkl'.format(str(data_num)))
         else:
-            self.data_root = os.path.join(data_root, 'test_VG_clean_5.pkl')
+            self.data_root = os.path.join(data_root, 'test_VG_clean_{}.pkl'.format(str(data_num)))
 
         with open(self.data_root,'rb') as f:
             self.data = pickle.load(f, encoding='latin')
@@ -102,6 +102,18 @@ class VG_data(Dataset):
         # return self.vocab_encoder["<blank>" + "</w>"]
         return self.vocab.index("<blank>")
 
+    def get_stats(self):
+        len_data = [0]
+        for i, data in enumerate(self.data['gt_embed_ali']):
+            len_data += [data.shape[0]]
+        len_data = np.asarray(len_data)
+        print('mean length:', np.mean(len_data))
+        print('median length:', np.median(len_data))
+        print('max length:', np.max(len_data))
+        len_data_over = len_data[len_data>50]
+        pdb.set_trace()
+        return len_data
+
 def encode_onehot(labels):
     classes = set(labels)
     classes_dict = {c: np.identity(len(classes))[i, :] for i, c in
@@ -111,12 +123,15 @@ def encode_onehot(labels):
     return labels_onehot
 
 if __name__ == '__main__':
+    home_path = os.getcwd()
+
     time0 = time.time()
-    train_dataset = VG_data(status='train')
+    train_dataset = VG_data(status='train', data_root=os.path.join(home_path,'data'))
     time1 = time.time()
-    print('Load model and data{}'.format(time1-time0))
-    gt_embed, input_embed, adj, input_mask = train_dataset.__getitem__(0)
-    print('build data graph and embedding{}'.format(time.time()-time1))
-    pdb.set_trace()
+    train_dataset.get_stats()
+    # print('Load model and data{}'.format(time1-time0))
+    # gt_embed, input_embed, adj, input_mask = train_dataset.__getitem__(0)
+    # print('build data graph and embedding{}'.format(time.time()-time1))
+    # pdb.set_trace()
 
 

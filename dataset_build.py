@@ -27,6 +27,9 @@ rel_root_test = os.path.join(data_root, filename_test)
 # atr_root = os.path.join(data_root, 'attributes.json')
 status = status
 
+global data_num
+data_num = 10000
+
 print("loading vg data: ", data_root)
 
 with open(rel_root_train) as f:
@@ -80,8 +83,11 @@ def preprocess_data(new_categories, rel_data):
     total_data['node_name'] = []
     total_data['gt_embed_ali'] = []
 
-
-    for idx in tqdm(range(len(rel_data[:5]))):
+    if data_num == "full":
+        data_length = len(rel_data)
+    else:
+        data_length = int(data_num)
+    for idx in tqdm(range(len(rel_data[:data_length]))):
         single_rel_data = rel_data[idx]['relationships']
         if len(single_rel_data) == 0:
             continue
@@ -162,15 +168,15 @@ save_root = 'data/'
 if not os.path.exists(save_root):
     os.mkdir(save_root)
 
-filename = os.path.join(save_root, 'train_VG_clean_5.pkl')
+filename = os.path.join(save_root, 'train_VG_clean_{}.pkl'.format(str(data_num)))
 with open(filename, 'wb') as f:
     pickle.dump(train_data, f)
 
-filename = os.path.join(save_root, 'test_VG_clean_5.pkl')
+filename = os.path.join(save_root, 'test_VG_clean_{}.pkl'.format(str(data_num)))
 with open(filename, 'wb') as f:
     pickle.dump(test_data, f)
 
-filename = os.path.join(save_root, 'vocab_clean_5.pkl')
+filename = os.path.join(save_root, 'vocab_clean_{}.pkl'.format(str(data_num)))
 
 with open(filename, 'wb') as f:
     pickle.dump(new_categories, f)
