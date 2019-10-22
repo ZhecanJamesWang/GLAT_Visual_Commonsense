@@ -22,11 +22,12 @@ import torch.optim.lr_scheduler as lr_scheduler
 import copy
 import random
 import datetime
+from tensorboardX import SummaryWriter
 
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -41,9 +42,9 @@ parser.add_argument('--lr', type=float, default=0.001,
                     help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=5e-4,
                     help='Weight decay (L2 loss on parameters).')
-# parser.add_argument('--hidden', type=int, default=16,
-#                     help='Number of hidden units.')
-parser.add_argument('--dropout', type=float, default=0.5,
+# parser.add_argument('--dropout', type=float, default=0.5,
+#                     help='Dropout rate (1 - keep probability).')
+parser.add_argument('--dropout', type=float, default=0.1,
                     help='Dropout rate (1 - keep probability).')
 parser.add_argument('--n_heads', type=int, default=8, help='Number of head attentions.')
 parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')
@@ -230,15 +231,15 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_
 scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
 
 # cri_rec = torch.nn.CrossEntropyLoss()
-cri_rec = torch.nn.NLLLoss()
+cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
 cri_rec = cri_rec.to(device=device)
 
 # cri_con = torch.nn.CrossEntropyLoss()
-cri_con = torch.nn.NLLLoss()
+cri_con = torch.nn.NLLLoss(ignore_index=blank_idx)
 cri_con = cri_con.to(device=device)
 
 
-blank_idx = train_dataset.get_blank()
+writer = SummaryWriter(log_dir="my_experiment", filename_suffix=record_file_name.split('.')[0])
 
 def train(epoch):
     model.train()
@@ -270,9 +271,9 @@ def train(epoch):
             continue
         else:
             pred_label, pred_connect = model(input_embed, adj)
-            pred_label = pred_label.view(-1, pred_label.size(-1))
+            pred_label_flat = pred_label.view(-1, pred_label.size(-1))
             # gt_embed = gt_embed.squeeze(-1).view(-1)
-            gt_embed = gt_embed.view(-1)
+            gt_embed_flat = gt_embed.view(-1)
             pos_mask, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj)
             pred_connect_train = torch.cat((pred_connect[pos_mask], pred_connect[bal_neg_mask]), 0)
             gt_edge_train = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(bal_neg_mask))), 0).long()
@@ -283,12 +284,13 @@ def train(epoch):
             # torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
             # torch.cat((torch.ones(num_list[0]), torch.zeros(num_list[1])), 0).long()
             # pdb.set_trace()
-            pred_label_eff = pred_label[pad_masks.view(-1)==0]
-            gt_embed_eff = gt_embed[pad_masks.view(-1)==0]
-            pred_label_mask = pred_label[input_mask.view(-1)==1]
-            gt_embed_mask = gt_embed[input_mask.view(-1)==1]
+            pred_label_eff = pred_label_flat[pad_masks.view(-1) == 0]
+            gt_embed_eff = gt_embed_flat[pad_masks.view(-1) == 0]
+            pred_label_mask = pred_label_flat[input_mask.view(-1) == 1]
+            gt_embed_mask = gt_embed_flat[input_mask.view(-1) == 1]
 
-            loss_rec = cri_rec(pred_label_eff, gt_embed_eff)
+            # loss_rec = cri_rec(pred_label_eff, gt_embed_eff)
+            loss_rec = cri_rec(pred_label, gt_embed)
             loss_con = cri_con(pred_connect_train, gt_edge_train.to(device=device))
             # loss_con = cri_con(pred_connect_eff, gt_edge_eff.to(device=device))
             loss = loss_rec + loss_con
@@ -342,7 +344,7 @@ def train(epoch):
                       'time: {:.4f}s '.format(time.time() - t)]))
                 # 'loss_val: {:.4f}'.format(loss_val.item()),
                 # 'acc_val: {:.4f}'.format(acc_val.item()),
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
     print('Train Epoch Finished: {:04d} '.format(epoch),
       'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
@@ -372,6 +374,15 @@ def train(epoch):
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
       'time: {:.4f}s '.format(time.time() - t)]))
+    writer.add_scalar('train/loss_rec', loss_total_rec/num_sample, epoch)
+    writer.add_scalar('train/loss_con', loss_totoal_con/num_sample, epoch)
+    writer.add_scalar('train/node_acc_train', node_acc.overall_acc(), epoch)
+    writer.add_scalar('train/node_acc_mask_train', node_acc_mask.overall_acc(), epoch)
+    writer.add_scalar('train/edge_acc_train_overallacc', edge_acc_train.overall_acc(), epoch)
+    writer.add_scalar('train/edge_acc_eff_overallacc', edge_acc_eff.overall_acc(), epoch)
+    writer.add_scalar('train/edge_acc_eff_classacc_neg', edge_acc_eff.class_acc()[0], epoch)
+    writer.add_scalar('train/edge_acc_eff_classacc_pos', edge_acc_eff.class_acc()[1], epoch)
+    writer.add_scalar('train/edge_acc_eff_recall', edge_acc_eff.recall(), epoch)
 
 def test(epoch):
     model.eval()
@@ -403,20 +414,21 @@ def test(epoch):
             continue
         else:
             pred_label, pred_connect = model(input_embed, adj)
-            pred_label = pred_label.view(-1, pred_label.size(-1))
+            pred_label_flat = pred_label.view(-1, pred_label.size(-1))
             # gt_embed = gt_embed.squeeze(-1).view(-1)
-            gt_embed = gt_embed.view(-1)
+            gt_embed_flat = gt_embed.view(-1)
             pos_mask, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj)
             # pdb.set_trace()
-            pred_label_mask = pred_label[input_mask.view(-1)==1]
-            gt_embed_mask = gt_embed[input_mask.view(-1)==1]
+            pred_label_mask = pred_label_flat[input_mask.view(-1)==1]
+            gt_embed_mask = gt_embed_flat[input_mask.view(-1)==1]
 
             pred_connect_eff = torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
             gt_edge_eff = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(neg_mask))), 0).long()
 
-            pred_label_eff = pred_label[pad_masks.view(-1)==0]
-            gt_embed_eff = gt_embed[pad_masks.view(-1)==0]
-            loss_rec = cri_rec(pred_label_eff, gt_embed_eff)
+            pred_label_eff = pred_label_flat[pad_masks.view(-1)==0]
+            gt_embed_eff = gt_embed_flat[pad_masks.view(-1)==0]
+            # loss_rec = cri_rec(pred_label_eff, gt_embed_eff)
+            loss_rec = cri_rec(pred_label, gt_embed)
             loss_con = cri_con(pred_connect_eff, gt_edge_eff.to(device=device))
             # loss = loss_rec + loss_con
 
@@ -427,7 +439,7 @@ def test(epoch):
             node_acc_mask.add(pred_label_mask, gt_embed_mask)
             node_acc.add(pred_label_eff, gt_embed_eff)
             edge_acc.add(pred_connect_eff, gt_edge_eff)
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
     print('Test Epoch Finished: {:04d} '.format(epoch),
       'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
@@ -455,10 +467,14 @@ def test(epoch):
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
       'time: {:.4f}s '.format(time.time() - t)]))
-    # print("Test set results:",
-    #         'loss_rec: {:.4f}'.format(loss_rec.item()),
-    #         'loss_con: {:.4f}'.format(loss_con.item()))
-
+    writer.add_scalar('test/loss_rec', loss_total_rec/num_sample, epoch)
+    writer.add_scalar('test/loss_con', loss_totoal_con/num_sample, epoch)
+    writer.add_scalar('test/node_acc_train', node_acc.overall_acc(), epoch)
+    writer.add_scalar('test/node_acc_mask_train', node_acc_mask.overall_acc(), epoch)
+    writer.add_scalar('test/edge_acc_eff_overallacc', edge_acc.overall_acc(), epoch)
+    writer.add_scalar('test/edge_acc_eff_classacc_neg', edge_acc.class_acc()[0], epoch)
+    writer.add_scalar('test/edge_acc_eff_classacc_pos', edge_acc.class_acc()[1], epoch)
+    writer.add_scalar('test/edge_acc_eff_recall', edge_acc.recall(), epoch)
 
 # Train model
 t_total = time.time()
@@ -473,6 +489,7 @@ for epoch in range(args.epochs):
     # if (epoch+1) % 5 == 0:
     test(epoch)
 
+writer.close()
 print("Optimization Finished!")
 print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
