@@ -26,7 +26,7 @@ import datetime
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -52,24 +52,22 @@ args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 # ToDo: hyperparameters connect with command line later
-args.GAT_num = 3 # increase attention multiple head parallel or in series
 args.Trans_num = 3
+args.GAT_num = 3 # increase attention multiple head parallel or in series
 args.fea_dim = 300
-args.nhid_gat = 100   #statt with 300
+args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
-<<<<<<< HEAD
-args.n_heads = 8  # maybe cause inbalance between gat and trans complication, maybe make this 1 later when comparing with gat
-args.batch_size = 30
-=======
 args.n_heads = 8
 # args.batch_size = 30
 args.batch_size = 60
->>>>>>> 173e2b8d270cae7631e5372f3395319e9757d1c5
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
 # args.lr = 0.00001 * args.batch_size
 args.step_size = 15 # tuning this number, maybe change this to adaptive learning rate in the future depending on the loss
+args.ratio = 5
+args.if_max_length_fix = True
+
 record_file_name = date + "_{}g_{}t_concat_no_init_mask.txt".format(args.GAT_num, args.Trans_num)
 
 # args.weight_decay = 1e-4
@@ -129,14 +127,18 @@ def save_to_record(content):
 
 def my_collate(batch):
     max_length = 0
+
     remove_list = []
     for i, item in enumerate(batch):
         if item[0].size(0) >= args.mini_node_num:
             remove_list.append(i)
         else:
             max_length = max(max_length, item[0].size(0))
-    # print('max length in batch is', max_length)
-    max_length = max_length + 1
+
+    if args.if_max_length_fix:
+        max_length = args.mini_node_num
+    # print(max_length)
+    # max_length = max_length + 1
     gt_embeds = []
     input_embeds = []
     adjs = []
@@ -160,9 +162,9 @@ def my_collate(batch):
     adjs = torch.cat(adjs, 0)
     input_masks = torch.cat(input_masks, 0)
     pad_masks = torch.cat(pad_masks, 0)
-    if max_length > 100:
-        print('max_length:', max_length)
-        save_to_record("".join(['max_length:', str(max_length)]))
+    # if max_length > 100:
+    #     print('max_length:', max_length)
+    #     save_to_record("".join(['max_length:', str(max_length)]))
     return [gt_embeds, input_embeds, adjs, input_masks, pad_masks]
 
 
@@ -178,7 +180,6 @@ def get_gt_edge(pad_masks, adj):
     '''
     B = pad_masks.size(0)
     N = pad_masks.size(1)
-    ratio = 3
     # D = 1
 
     effective_mask = torch.mul((1-pad_masks).unsqueeze(-1), (1-pad_masks).unsqueeze(1))
@@ -190,7 +191,7 @@ def get_gt_edge(pad_masks, adj):
     if len(torch.nonzero(neg_mask)) > len(torch.nonzero(pos_mask)):
         num_pos = len(torch.nonzero(pos_mask))
         num_neg = len(torch.nonzero(neg_mask))
-        mask = random.sample(range(0, num_neg), num_neg - ratio * num_pos)
+        mask = random.sample(range(0, num_neg), num_neg - args.ratio * num_pos)
         bal_neg_mask[torch.nonzero(neg_mask)[mask]] = 0
 
     return torch.nonzero(pos_mask).squeeze(-1), torch.nonzero(neg_mask).squeeze(-1), torch.nonzero(bal_neg_mask).squeeze(-1), torch.nonzero(effective_mask).squeeze(-1)
@@ -225,8 +226,8 @@ model = model.to(device=device)
 model = nn.DataParallel(model)
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[14, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125], gamma=0.5)
-# scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
+# scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[14, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125], gamma=0.5)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
 
 # cri_rec = torch.nn.CrossEntropyLoss()
 cri_rec = torch.nn.NLLLoss()
