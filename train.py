@@ -26,7 +26,7 @@ import datetime
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -35,7 +35,7 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
 parser.add_argument('--fastmode', action='store_true', default=False,
                     help='Validate during training pass.')
 parser.add_argument('--seed', type=int, default=42, help='Random seed.')
-parser.add_argument('--epochs', type=int, default=800,
+parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='Initial learning rate.')
@@ -58,7 +58,8 @@ args.fea_dim = 300
 args.nhid_gat = 100
 args.nhid_trans = 300
 args.n_heads = 8
-args.batch_size = 30
+# args.batch_size = 30
+args.batch_size = 60
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
@@ -172,6 +173,7 @@ def get_gt_edge(pad_masks, adj):
     '''
     B = pad_masks.size(0)
     N = pad_masks.size(1)
+    ratio = 3
     # D = 1
 
     effective_mask = torch.mul((1-pad_masks).unsqueeze(-1), (1-pad_masks).unsqueeze(1))
@@ -183,7 +185,7 @@ def get_gt_edge(pad_masks, adj):
     if len(torch.nonzero(neg_mask)) > len(torch.nonzero(pos_mask)):
         num_pos = len(torch.nonzero(pos_mask))
         num_neg = len(torch.nonzero(neg_mask))
-        mask = random.sample(range(0, num_neg), num_neg - num_pos)
+        mask = random.sample(range(0, num_neg), num_neg - ratio * num_pos)
         bal_neg_mask[torch.nonzero(neg_mask)[mask]] = 0
 
     return torch.nonzero(pos_mask).squeeze(-1), torch.nonzero(neg_mask).squeeze(-1), torch.nonzero(bal_neg_mask).squeeze(-1), torch.nonzero(effective_mask).squeeze(-1)
@@ -218,8 +220,8 @@ model = model.to(device=device)
 model = nn.DataParallel(model)
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-# scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[30, 60, 90, 120, 150], gamma=0.5)
-scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
+scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[14, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125], gamma=0.5)
+# scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
 
 # cri_rec = torch.nn.CrossEntropyLoss()
 cri_rec = torch.nn.NLLLoss()
@@ -307,7 +309,7 @@ def train(epoch):
 
             # loss_val = F.nll_loss(output[idx_val], labels[idx_val])
             # acc_val = accuracy(output[idx_val], labels[idx_val])
-            if (i+1) % 1000 == 0:
+            if (i+1) % 100 == 0:
                 print('Train Epoch: {:04d} [{}/{}] '.format(epoch, i, len(train_loader)),
                       'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
                       'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
