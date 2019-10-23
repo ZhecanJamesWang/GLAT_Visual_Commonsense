@@ -27,7 +27,7 @@ from tensorboardX import SummaryWriter
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -54,13 +54,14 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 # ToDo: hyperparameters connect with command line later
 args.Trans_num = 3
-args.GAT_num = 3  # increase attention multiple head parallel or in series
+args.GAT_num = 1  # increase attention multiple head parallel or in series
 args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
 args.n_heads = 8
 # args.batch_size = 30
-args.batch_size = 20
+# args.batch_size = 20
+args.batch_size = 46
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001

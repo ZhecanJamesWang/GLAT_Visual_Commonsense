@@ -152,25 +152,25 @@ class Transformer(nn.Module):
         return enc_output
 
 
-class Transformer_Ensemble(nn.Module):
-    def __init__(self, Trans_num, d_word_vec=512, d_model=512, d_inner=2048, n_layers=6, n_head=8, d_k=64, d_v=64,
-                 dropout=0.1):
-        """Ensembled version of Trans."""
-        super(Transformer_Ensemble, self).__init__()
-        print("initialize Trans with module num = : ", Trans_num)
-
-        self.Trans_num = Trans_num
-        self.Trans = nn.ModuleList()
-
-        for num in range(self.Trans_num):
-            model = Transformer(d_word_vec=d_word_vec, d_model=d_model, d_inner=d_inner, n_layers=n_layers,
-                                n_head=n_head, d_k=d_k, d_v=d_v, dropout=dropout)
-            self.Trans.append(model)
-
-    def forward(self, x, slf_attn_mask, non_pad_mask):
-        for num in range(self.Trans_num):
-            x = self.Trans[num](x, slf_attn_mask, non_pad_mask)
-        return x
+# class Transformer_Ensemble(nn.Module):
+#     def __init__(self, Trans_num, d_word_vec=512, d_model=512, d_inner=2048, n_layers=6, n_head=8, d_k=64, d_v=64,
+#                  dropout=0.1):
+#         """Ensembled version of Trans."""
+#         super(Transformer_Ensemble, self).__init__()
+#         print("initialize Trans with module num = : ", Trans_num)
+#
+#         self.Trans_num = Trans_num
+#         self.Trans = nn.ModuleList()
+#
+#         for num in range(self.Trans_num):
+#             model = Transformer(d_word_vec=d_word_vec, d_model=d_model, d_inner=d_inner, n_layers=n_layers,
+#                                 n_head=n_head, d_k=d_k, d_v=d_v, dropout=dropout)
+#             self.Trans.append(model)
+#
+#     def forward(self, x, slf_attn_mask, non_pad_mask):
+#         for num in range(self.Trans_num):
+#             x = self.Trans[num](x, slf_attn_mask, non_pad_mask)
+#         return x
 
 
 class Connect_Cls(nn.Module):
@@ -287,63 +287,68 @@ class Pred_label(nn.Module):
 #         return x
 
 
-# class GLAT_Seq(nn.Module):
-#     def __init__(self, vocab_num, fea_dim, nhid, dropout, alpha, nheads, num):
-#         super(GLAT_Seq, self).__init__()
-#         self.num = num
-#         self.embed = nn.Embedding(vocab_num, fea_dim)
-#         self.GLATs = nn.ModuleList()
-#         for num in range(self.num):
-#             model = GLAT(fea_dim, nhid, nhid, dropout, alpha, nheads)
-#             self.GLATs.append(model)
-#
-#     def forward(self, fea, adj, non_pad_mask, slf_attn_mask):
-#         fea = fea.long()
-#         x = self.embed(fea)
-#         for num in range(self.num):
-#             x = self.GLATs[num][x, adj, non_pad_mask, slf_attn_mask]
-#         return x
-#
-#
-# class GLAT(nn.Module):
-#     def __init__(self, fea_dim, nhid, nout, dropout, alpha, nheads):
-#         super(GLAT, self).__init__()
-#         self.GLAT_G = GLAT_basic("global", fea_dim, nhid, nout, dropout, alpha, nheads)
-#         self.GLAT_L = GLAT_basic("local", fea_dim, nhid, nout, dropout, alpha, nheads)
-#         self.fc = nn.Linear(2*nout, nout)
-#
-#     def forward(self):
-#         x_g = self.GLAT_G(x) # output b, n, dim
-#         x_l = self.GLAT_L(x)
-#         x = torch.cat((x_g, x_l), -1) # output b, n, 2*dim
-#         x = self.fc(x)
-#         return x
-#
-#
-# class GLATNET(nn.Module):
-#     def __init__(self, vocab_num, num, feat_dim, nhid, dropout, alpha, nheads, blank):
-#         """Dense version of GAT."""
-#         super(GLATNET, self).__init__()
-#         print("initialize GAT Unify with num ", num)
-#
-#         self.GLAT_Seq = GLAT_Seq(vocab_num, feat_dim, nhid, dropout, alpha, nheads, num)
-#         # self.Trans_Ensemble = Transformer_Ensemble(Trans_num, d_word_vec=nhid_trans, d_model=nhid_trans)
-#
-#         self.Pred_label = Pred_label(self.GAT_Unify)
-#         self.Pred_connect = Connect_Cls(nhid, int(nhid / 2), 2)
-#
-#         self.blank = blank
-#
-#     def forward(self, fea, adj):
-#         slf_attn_mask = get_attn_key_pad_mask(seq_k=fea, seq_q=fea, blank=self.blank)
-#         non_pad_mask = get_non_pad_mask(fea, blank=self.blank)
-#
-#         x = self.GLAT_Seq(fea, adj, slf_attn_mask, non_pad_mask)
-#
-#         pred_label = self.Pred_label(x)
-#         pred_edge = self.Pred_connect(x, adj)
-#
-#         return pred_label, pred_edge
+class GLAT_Seq(nn.Module):
+    def __init__(self, vocab_num, fea_dim, nhid, dropout, alpha, nheads, num):
+        super(GLAT_Seq, self).__init__()
+        self.num = num
+        self.embed = nn.Embedding(vocab_num, fea_dim)
+        self.GLATs = nn.ModuleList()
+        for num in range(self.num):
+            model = GLAT(fea_dim, nhid, nhid, dropout, alpha, nheads)
+            self.GLATs.append(model)
+
+    def forward(self, fea, adj, non_pad_mask, slf_attn_mask):
+        fea = fea.long()
+        x = self.embed(fea)
+        for num in range(self.num):
+            x = self.GLATs[num][x, adj, non_pad_mask, slf_attn_mask]
+        return x
+
+
+class GLAT(nn.Module):
+    def __init__(self, fea_dim, nhid, nout, dropout, alpha, nheads):
+        super(GLAT, self).__init__()
+
+        # self.GLAT_G = GLAT_basic("global", fea_dim, nhid, nout, dropout, alpha, nheads)
+        # self.GLAT_L = GLAT_basic("local", fea_dim, nhid, nout, dropout, alpha, nheads)
+
+        self.GLAT_L = GAT(fea_dim, nhid, nout, dropout, alpha, nheads)
+        self.GLAT_G = EncoderLayer(d_model=nhid, d_inner=2048, n_head=nheads, d_k=64, d_v=64, dropout=dropout)
+
+        self.fc = nn.Linear(2*nout, nout)
+
+    def forward(self, x):
+        x_g = self.GLAT_G(x) # output b, n, dim
+        x_l = self.GLAT_L(x)
+        x = torch.cat((x_g, x_l), -1) # output b, n, 2*dim
+        x = self.fc(x)
+        return x
+
+
+class GLATNET(nn.Module):
+    def __init__(self, vocab_num, num, feat_dim, nhid, dropout, alpha, nheads, blank):
+        """Dense version of GAT."""
+        super(GLATNET, self).__init__()
+        print("initialize GAT Unify with num ", num)
+
+        self.GLAT_Seq = GLAT_Seq(vocab_num, feat_dim, nhid, dropout, alpha, nheads, num)
+        # self.Trans_Ensemble = Transformer_Ensemble(Trans_num, d_word_vec=nhid_trans, d_model=nhid_trans)
+
+        self.Pred_label = Pred_label(self.GAT_Unify)
+        self.Pred_connect = Connect_Cls(nhid, int(nhid / 2), 2)
+
+        self.blank = blank
+
+    def forward(self, fea, adj):
+        slf_attn_mask = get_attn_key_pad_mask(seq_k=fea, seq_q=fea, blank=self.blank)
+        non_pad_mask = get_non_pad_mask(fea, blank=self.blank)
+
+        x = self.GLAT_Seq(fea, adj, slf_attn_mask, non_pad_mask)
+
+        pred_label = self.Pred_label(x)
+        pred_edge = self.Pred_connect(x, adj)
+
+        return pred_label, pred_edge
 
 
 class Ensemble_encoder(nn.Module):
@@ -365,7 +370,7 @@ class Ensemble_encoder(nn.Module):
             )
         else:
             self.GAT_Ensemble = GAT_Ensemble(vocab_num, feat_dim, nhid_gat, nhid_trans, dropout, alpha, nheads, GAT_num)
-            self.Trans_Ensemble = Transformer_Ensemble(Trans_num, d_word_vec=nhid_trans, d_model=nhid_trans)
+            self.Trans_Ensemble = Transformer(n_layers=Trans_num, d_word_vec=nhid_trans, d_model=nhid_trans, dropout=dropout)
             self.Pred_label = Pred_label(self.GAT_Ensemble)
 
         # self.Pred_label = Pred_label(self)
