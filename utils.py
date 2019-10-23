@@ -7,6 +7,7 @@ import spacy
 import torch
 from tqdm import tqdm
 import pdb
+import os
 
 
 def encode_onehot(labels):
@@ -67,6 +68,50 @@ def normalize(mx):
     r_mat_inv = sp.diags(r_inv)
     mx = r_mat_inv.dot(mx)
     return mx
+
+
+def save_model(model, epoch, filename, model_path, foldername, best_acc):
+
+    diretory = os.path.join(model_path, foldername)
+
+    if not os.path.exists(diretory):
+        os.makedirs(diretory)
+
+    ckpt = dict(
+        epoch=epoch,
+        best_acc=best_acc,
+        model=model.state_dict(),
+    )
+
+    path = os.path.join(diretory, filename)
+    torch.save(ckpt, path)
+    print("model saved at: ", path)
+
+
+class Record(object):
+    def __init__(self):
+        self.best_test_node_mask_acc = 0
+        self.best_test_edge_pos_acc = 0
+
+    def compare_node_mask_acc(self, candidate):
+        if candidate > self.best_test_node_mask_acc:
+            self.best_test_node_mask_acc = candidate
+            return True
+        else:
+            return False
+
+    def compare_edge_pos_acc(self, candidate):
+        if candidate > self.best_test_edge_pos_acc:
+            self.best_test_edge_pos_acc = candidate
+            return True
+        else:
+            return False
+
+    def get_best_test_node_mask_acc(self):
+        return self.best_test_node_mask_acc
+
+    def get_best_test_edge_pos_acc(self):
+        return self.best_test_edge_pos_acc
 
 
 class Counter(object):

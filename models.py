@@ -64,21 +64,20 @@ class GAT_Ensemble(nn.Module):
         # print(type(nfeat))
         self.embed = nn.Embedding(vocab_num, nfeat)
 
-        # for num in range(self.GAT_num):
-        model = GAT(nfeat, nhid, noutput, dropout, alpha, nheads)
-        self.GATs.append(model)
+        for num in range(self.GAT_num):
+            model = GAT(nfeat, nhid, noutput, dropout, alpha, nheads)
+            self.GATs.append(model)
 
     def forward(self, fea, adj, non_pad_mask):
 
         fea = fea.long()
-        # pdb.set_trace()
 
         x = self.embed(fea)
         # x = x.squeeze(2)
 
-        # for num in range(self.GAT_num):
-        num = 0
-        x = self.GATs[num](x, adj, non_pad_mask)
+        for num in range(self.GAT_num):
+        # num = 0
+            x = self.GATs[num](x, adj, non_pad_mask)
         return x
 
 
@@ -257,6 +256,94 @@ class Pred_label(nn.Module):
         lm_logits = self.decoder(h)
         lm_logits = self.softmax(lm_logits)
         return lm_logits
+
+#
+# class GLAT_basic(nn.Module):
+#     def __init__(self, foc_type, att_type, fea_dim, nhid, nout, dropout, alpha, nheads):
+#         super(GLAT_basic, self).__init__()
+#
+#         self.dropout = dropout
+#
+#         self.attentions = [GraphAttentionLayer(nfeat, nhid, dropout=dropout, alpha=alpha, concat=True) for _ in range(nheads)]
+#         for i, attention in enumerate(self.attentions):
+#             self.add_module('attention_{}'.format(i), attention)
+#
+#         self.out_att = GraphAttentionLayer(nhid * nheads, noutput, dropout=dropout, alpha=alpha, concat=False)
+#
+#     def forward(self, x, adj, non_pad_mask):
+#
+#         x = F.dropout(x, self.dropout, training=self.training)
+#         x = torch.cat([att(x, adj) for att in self.attentions], dim=2)
+#
+#         x *= non_pad_mask
+#
+#         x = F.dropout(x, self.dropout, training=self.training)
+#         x = self.out_att(x, adj)
+#
+#         x *= non_pad_mask
+#
+#         x = F.elu(x)
+#
+#         return x
+
+
+# class GLAT_Seq(nn.Module):
+#     def __init__(self, vocab_num, fea_dim, nhid, dropout, alpha, nheads, num):
+#         super(GLAT_Seq, self).__init__()
+#         self.num = num
+#         self.embed = nn.Embedding(vocab_num, fea_dim)
+#         self.GLATs = nn.ModuleList()
+#         for num in range(self.num):
+#             model = GLAT(fea_dim, nhid, nhid, dropout, alpha, nheads)
+#             self.GLATs.append(model)
+#
+#     def forward(self, fea, adj, non_pad_mask, slf_attn_mask):
+#         fea = fea.long()
+#         x = self.embed(fea)
+#         for num in range(self.num):
+#             x = self.GLATs[num][x, adj, non_pad_mask, slf_attn_mask]
+#         return x
+#
+#
+# class GLAT(nn.Module):
+#     def __init__(self, fea_dim, nhid, nout, dropout, alpha, nheads):
+#         super(GLAT, self).__init__()
+#         self.GLAT_G = GLAT_basic("global", fea_dim, nhid, nout, dropout, alpha, nheads)
+#         self.GLAT_L = GLAT_basic("local", fea_dim, nhid, nout, dropout, alpha, nheads)
+#         self.fc = nn.Linear(2*nout, nout)
+#
+#     def forward(self):
+#         x_g = self.GLAT_G(x) # output b, n, dim
+#         x_l = self.GLAT_L(x)
+#         x = torch.cat((x_g, x_l), -1) # output b, n, 2*dim
+#         x = self.fc(x)
+#         return x
+#
+#
+# class GLATNET(nn.Module):
+#     def __init__(self, vocab_num, num, feat_dim, nhid, dropout, alpha, nheads, blank):
+#         """Dense version of GAT."""
+#         super(GLATNET, self).__init__()
+#         print("initialize GAT Unify with num ", num)
+#
+#         self.GLAT_Seq = GLAT_Seq(vocab_num, feat_dim, nhid, dropout, alpha, nheads, num)
+#         # self.Trans_Ensemble = Transformer_Ensemble(Trans_num, d_word_vec=nhid_trans, d_model=nhid_trans)
+#
+#         self.Pred_label = Pred_label(self.GAT_Unify)
+#         self.Pred_connect = Connect_Cls(nhid, int(nhid / 2), 2)
+#
+#         self.blank = blank
+#
+#     def forward(self, fea, adj):
+#         slf_attn_mask = get_attn_key_pad_mask(seq_k=fea, seq_q=fea, blank=self.blank)
+#         non_pad_mask = get_non_pad_mask(fea, blank=self.blank)
+#
+#         x = self.GLAT_Seq(fea, adj, slf_attn_mask, non_pad_mask)
+#
+#         pred_label = self.Pred_label(x)
+#         pred_edge = self.Pred_connect(x, adj)
+#
+#         return pred_label, pred_edge
 
 
 class Ensemble_encoder(nn.Module):
