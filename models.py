@@ -59,25 +59,29 @@ class GAT_Ensemble(nn.Module):
         print("initialize GAT with module num = : ", GAT_num)
 
         self.GAT_num = GAT_num
-        self.GATs = nn.ModuleList()
+        # self.GATs = nn.ModuleList()
         # print(type(vocab_num))
         # print(type(nfeat))
         self.embed = nn.Embedding(vocab_num, nfeat)
 
-        for num in range(self.GAT_num):
-            model = GAT(nfeat, nhid, noutput, dropout, alpha, nheads)
-            self.GATs.append(model)
+        # for num in range(self.GAT_num):
+        #     model = GAT(nfeat, nhid, noutput, dropout, alpha, nheads)
+        #     self.GATs.append(model)
+
+        self.GATs = nn.ModuleList([
+            GAT(nfeat, nhid, noutput, dropout, alpha, nheads)
+            for _ in range(self.GAT_num)
+        ])
 
     def forward(self, fea, adj, non_pad_mask):
-
         fea = fea.long()
-
         x = self.embed(fea)
         # x = x.squeeze(2)
 
-        for num in range(self.GAT_num):
-        # num = 0
-            x = self.GATs[num](x, adj, non_pad_mask)
+        for GAT in self.GATs:
+            x = GAT(x, adj, non_pad_mask)
+        # for num in range(self.GAT_num):
+        #     x = self.GATs[num](x, adj, non_pad_mask)
         return x
 
 
