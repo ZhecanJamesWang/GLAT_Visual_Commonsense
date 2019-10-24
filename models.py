@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from layers import GraphConvolution, EncoderLayer, GraphAttentionLayer
+from layers import GraphConvolution, EncoderLayer, GraphAttentionLayer, GraphAtt_Mutlihead_Basic, \
+    PositionwiseFeedForward
 import torch
 # import Constants
 import pdb
@@ -115,7 +116,6 @@ class Encoder(nn.Module):
         # -- Forward
         # enc_output = self.src_word_emb(src_seq) + self.position_enc(src_pos)
         enc_output = src_seq
-        # pdb.set_trace()
         # enc_output = torch.unsqueeze(enc_output, 0)
 
         for enc_layer in self.layer_stack:
@@ -138,7 +138,6 @@ class Transformer(nn.Module):
 
     def __init__(
             self, d_word_vec=512, d_model=512, d_inner=2048, n_layers=6, n_head=8, d_k=64, d_v=64, dropout=0.1):
-
 
         super().__init__()
 
@@ -262,84 +261,93 @@ class Pred_label(nn.Module):
         return lm_logits
 
 #
-# class GLAT_basic(nn.Module):
-#     def __init__(self, foc_type, att_type, fea_dim, nhid, nout, dropout, alpha, nheads):
-#         super(GLAT_basic, self).__init__()
-#
-#         self.dropout = dropout
-#
-#         self.attentions = [GraphAttentionLayer(nfeat, nhid, dropout=dropout, alpha=alpha, concat=True) for _ in range(nheads)]
-#         for i, attention in enumerate(self.attentions):
-#             self.add_module('attention_{}'.format(i), attention)
-#
-#         self.out_att = GraphAttentionLayer(nhid * nheads, noutput, dropout=dropout, alpha=alpha, concat=False)
-#
-#     def forward(self, x, adj, non_pad_mask):
-#
-#         x = F.dropout(x, self.dropout, training=self.training)
-#         x = torch.cat([att(x, adj) for att in self.attentions], dim=2)
-#
-#         x *= non_pad_mask
-#
-#         x = F.dropout(x, self.dropout, training=self.training)
-#         x = self.out_att(x, adj)
-#
-#         x *= non_pad_mask
-#
-#         x = F.elu(x)
-#
-#         return x
+class GLAT_basic(nn.Module):
+    def __init__(self, foc_type, att_type, d_model, nout,  n_head, d_k=64, d_v=64, dropout=0.1, d_inner=2048):
 
+        super(GLAT_basic, self).__init__()
 
-class GLAT_Seq(nn.Module):
-    def __init__(self, vocab_num, fea_dim, nhid, dropout, alpha, nheads, num):
-        super(GLAT_Seq, self).__init__()
-        self.num = num
-        self.embed = nn.Embedding(vocab_num, fea_dim)
-        self.GLATs = nn.ModuleList()
-        for num in range(self.num):
-            model = GLAT(fea_dim, nhid, nhid, dropout, alpha, nheads)
-            self.GLATs.append(model)
+        self.slf_attn = GraphAtt_Mutlihead_Basic(
+            n_head, d_model, d_k, d_v, foc_type, dropout=dropout)
+        self.pos_ffn = PositionwiseFeedForward(d_model, d_inner, dropout=dropout)
 
-    def forward(self, fea, adj, non_pad_mask, slf_attn_mask):
-        fea = fea.long()
-        x = self.embed(fea)
-        for num in range(self.num):
-            x = self.GLATs[num][x, adj, non_pad_mask, slf_attn_mask]
-        return x
+    def forward(self, enc_input, adj, non_pad_mask=None, slf_attn_mask=None):
+
+        enc_output, enc_slf_attn = self.slf_attn(
+            enc_input, enc_input, enc_input, adj, mask=slf_attn_mask)
+
+        enc_output *= non_pad_mask
+
+        enc_output = self.pos_ffn(enc_output)
+
+        enc_output *= non_pad_mask
+
+        return enc_output
 
 
 class GLAT(nn.Module):
-    def __init__(self, fea_dim, nhid, nout, dropout, alpha, nheads):
+    def __init__(self, fea_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, type):
         super(GLAT, self).__init__()
+        self.type = type
+        if type == 0:
+            self.GLAT_G = GLAT_basic("global", "do_product", fea_dim, nout, nheads, dropout=dropout)
+        elif type == 1:
+            self.GLAT_L = GLAT_basic("local", "do_product", fea_dim, nout, nheads, dropout=dropout)
+        elif type == 2:
+            self.GLAT_G = GLAT_basic("global", "do_product", fea_dim, nout, nheads, dropout=dropout)
+            self.GLAT_L = GLAT_basic("local",  "do_product", fea_dim, nout, nheads, dropout=dropout)
+            self.fc = nn.Linear(2 * int(nout), int(nout))
+        else:
+            raise("wrong model type")
 
-        # self.GLAT_G = GLAT_basic("global", fea_dim, nhid, nout, dropout, alpha, nheads)
-        # self.GLAT_L = GLAT_basic("local", fea_dim, nhid, nout, dropout, alpha, nheads)
+        # self.GLAT_L = GAT(fea_dim, nhid, nout, dropout, alpha, nheads)
+        # self.GLAT_G = EncoderLayer(d_model=nhid, d_inner=2048, n_head=nheads, d_k=64, d_v=64, dropout=dropout)
 
-        self.GLAT_L = GAT(fea_dim, nhid, nout, dropout, alpha, nheads)
-        self.GLAT_G = EncoderLayer(d_model=nhid, d_inner=2048, n_head=nheads, d_k=64, d_v=64, dropout=dropout)
 
-        self.fc = nn.Linear(2*nout, nout)
+    def forward(self, x, adj, non_pad_mask=None, slf_attn_mask=None):
+        if self.type == 0:
+            x = self.GLAT_G(x, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)  # output b, n, dim
+        elif self.type == 1:
+            x = self.GLAT_L(x, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)
+        elif self.type == 2:
+            x_g = self.GLAT_G(x, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask) # output b, n, dim
+            x_l = self.GLAT_L(x, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)
+            x = torch.cat([x_g, x_l], dim=-1) # output b, n, 2*dim
+            x = self.fc(x)
+        return x
 
-    def forward(self, x):
-        x_g = self.GLAT_G(x) # output b, n, dim
-        x_l = self.GLAT_L(x)
-        x = torch.cat((x_g, x_l), -1) # output b, n, 2*dim
-        x = self.fc(x)
+
+class GLAT_Seq(nn.Module):
+    def __init__(self, vocab_num, fea_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, types):
+        super(GLAT_Seq, self).__init__()
+        self.num = len(types)
+        self.embed = nn.Embedding(vocab_num, fea_dim)
+        self.GLATs = nn.ModuleList()
+
+        for i in range(self.num):
+            model = GLAT(fea_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, int(types[i]))
+            self.GLATs.append(model)
+
+
+
+    def forward(self, fea, adj, non_pad_mask=None, slf_attn_mask=None):
+        fea = fea.long()
+        x = self.embed(fea)
+        for num in range(self.num):
+            x = self.GLATs[num](x, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)
+
         return x
 
 
 class GLATNET(nn.Module):
-    def __init__(self, vocab_num, num, feat_dim, nhid, dropout, alpha, nheads, blank):
+    def __init__(self, vocab_num, feat_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, blank, types):
         """Dense version of GAT."""
         super(GLATNET, self).__init__()
-        print("initialize GAT Unify with num ", num)
+        print("initialize GlATNET with types: ", types)
 
-        self.GLAT_Seq = GLAT_Seq(vocab_num, feat_dim, nhid, dropout, alpha, nheads, num)
-        # self.Trans_Ensemble = Transformer_Ensemble(Trans_num, d_word_vec=nhid_trans, d_model=nhid_trans)
+        self.GLAT_Seq = GLAT_Seq(vocab_num, feat_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, types)
 
-        self.Pred_label = Pred_label(self.GAT_Unify)
-        self.Pred_connect = Connect_Cls(nhid, int(nhid / 2), 2)
+        self.Pred_label = Pred_label(self.GLAT_Seq)
+        self.Pred_connect = Connect_Cls(nhid_glat_g, int(nhid_glat_g/ 2), 2)
 
         self.blank = blank
 
@@ -347,7 +355,7 @@ class GLATNET(nn.Module):
         slf_attn_mask = get_attn_key_pad_mask(seq_k=fea, seq_q=fea, blank=self.blank)
         non_pad_mask = get_non_pad_mask(fea, blank=self.blank)
 
-        x = self.GLAT_Seq(fea, adj, slf_attn_mask, non_pad_mask)
+        x = self.GLAT_Seq(fea, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)
 
         pred_label = self.Pred_label(x)
         pred_edge = self.Pred_connect(x, adj)
@@ -355,10 +363,10 @@ class GLATNET(nn.Module):
         return pred_label, pred_edge
 
 
-class Ensemble_encoder(nn.Module):
+class Baseline(nn.Module):
     def __init__(self, vocab_num, GAT_num, Trans_num, feat_dim, nhid_gat, nhid_trans, dropout, alpha, nheads, blank, fc = False):
         """Dense version of GAT."""
-        super(Ensemble_encoder, self).__init__()
+        super(Baseline, self).__init__()
         print("initialize Encoder with GAT num ", GAT_num, " Bert num ", Trans_num)
         self.fc = fc
         if self.fc:

@@ -14,7 +14,7 @@ from torch import nn
 # from pygcn.utils import load_data, accuracy
 from data import VG_data
 from torch.utils.data import DataLoader
-from models import Ensemble_encoder
+from models import Baseline, GLATNET
 import pdb
 import os
 import utils
@@ -54,15 +54,21 @@ args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 # ToDo: hyperparameters connect with command line later
+# ===================
+# GLAT Model Additional Parameters
+args.struct = [2, 2, 2]
+args.nhid_glat_g = 300
+args.nhid_glat_l = 300
+args.nout = args.nhid_glat_l
+# ===================
+# Baseline Model Parameters
 args.Trans_num = 3
-args.GAT_num = 1  # increase attention multiple head parallel or in series
+args.GAT_num = 3  # increase attention multiple head parallel or in series
 args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
 args.n_heads = 8
 args.batch_size = 50
-# args.batch_size = 20
-# args.batch_size = 46
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
@@ -226,17 +232,27 @@ test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True,
 vocab_num = train_dataset.vocabnum()
 
 # Model and optimizer
-model = Ensemble_encoder(vocab_num=vocab_num,
-                         feat_dim=args.fea_dim,
-                         nhid_gat=args.nhid_gat,
-                         nhid_trans=args.nhid_trans,
-                         dropout=args.dropout,
-                         nheads=args.n_heads,
-                         alpha=args.alpha,
-                         GAT_num=args.GAT_num,
-                         Trans_num=args.Trans_num,
-                         blank=blank_idx,
-                         fc=fc)
+# model = Baseline(vocab_num=vocab_num,
+#                          feat_dim=args.fea_dim,
+#                          nhid_gat=args.nhid_gat,
+#                          nhid_trans=args.nhid_trans,
+#                          dropout=args.dropout,
+#                          nheads=args.n_heads,
+#                          alpha=args.alpha,
+#                          GAT_num=args.GAT_num,
+#                          Trans_num=args.Trans_num,
+#                          blank=blank_idx,
+#                          fc=fc)
+
+model = GLATNET(vocab_num=vocab_num,
+                feat_dim=args.fea_dim,
+                nhid_glat_g=args.nhid_glat_g,
+                nhid_glat_l=args.nhid_glat_l,
+                nout=args.nout,
+                dropout=args.dropout,
+                nheads=args.n_heads,
+                blank=blank_idx,
+                types=args.struct)
 
 model = model.to(device=device)
 # model = nn.DataParallel(model)
@@ -523,6 +539,8 @@ def test(epoch):
 
     print("best node_mask_acc {:.4f}".format(acc_recorder.get_best_test_node_mask_acc()))
     print("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
+    save_to_record("best node_mask_acc {:.4f}".format(acc_recorder.get_best_test_node_mask_acc()))
+    save_to_record("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
 
 
 # Train model

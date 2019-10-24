@@ -29,7 +29,7 @@
 # OS generated files #
 ######################
 .DS_Store
-.idea/workspace.xml
+*.idea/workspace.xml
 # .DS_Store?
 # ._*
 # .Spotlight-V100
