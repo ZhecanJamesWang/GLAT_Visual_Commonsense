@@ -27,8 +27,11 @@ rel_root_test = os.path.join(data_root, filename_test)
 # atr_root = os.path.join(data_root, 'attributes.json')
 status = status
 
-global data_num
-data_num = 10000
+# global data_num
+data_num_train = 10000
+data_num_test = 2000
+# data_num_train = 'full'
+# data_num_test = 'full'
 
 print("loading vg data: ", data_root)
 
@@ -74,7 +77,7 @@ fix_vocabulary = 1
 # total_data['mask_idx'] = []
 
 
-def preprocess_data(new_categories, rel_data):
+def preprocess_data(new_categories, rel_data, data_num):
     # subj_len = 0
     # obj_len = 0
     # max_length = 0
@@ -147,7 +150,8 @@ def preprocess_data(new_categories, rel_data):
             if pred_flg and sub_flg:
                 adj[idx_subject][idx_pred] = 1
             if pred_flg and obj_flg:
-                adj[idx_pred][idx_object] = 1
+                # adj[idx_pred][idx_object] = 1
+                adj[idx_pred][idx_object] = 2
             # max_length = max(pred_len, subj_len, obj_len, max_length)
 
         total_data['adj'].append(adj)
@@ -159,8 +163,8 @@ def preprocess_data(new_categories, rel_data):
     return total_data, new_categories
 
 
-train_data, new_categories = preprocess_data(new_categories, rel_data_train)
-test_data, new_categories = preprocess_data(new_categories, rel_data_test)
+train_data, new_categories = preprocess_data(new_categories, rel_data_train, data_num_train)
+test_data, new_categories = preprocess_data(new_categories, rel_data_test, data_num_test)
 
 
 
@@ -168,15 +172,15 @@ save_root = 'data/'
 if not os.path.exists(save_root):
     os.mkdir(save_root)
 
-filename = os.path.join(save_root, 'train_VG_clean_{}.pkl'.format(str(data_num)))
+filename = os.path.join(save_root, 'train_VG_clean_{}.pkl'.format('_'.join([str(data_num_train),str(data_num_test)])))
 with open(filename, 'wb') as f:
     pickle.dump(train_data, f)
 
-filename = os.path.join(save_root, 'test_VG_clean_{}.pkl'.format(str(data_num)))
+filename = os.path.join(save_root, 'test_VG_clean_{}.pkl'.format('_'.join([str(data_num_train),str(data_num_test)])))
 with open(filename, 'wb') as f:
     pickle.dump(test_data, f)
 
-filename = os.path.join(save_root, 'vocab_clean_{}.pkl'.format(str(data_num)))
+filename = os.path.join(save_root, 'vocab_clean_{}.pkl'.format('_'.join([str(data_num_train),str(data_num_test)])))
 
 with open(filename, 'wb') as f:
     pickle.dump(new_categories, f)

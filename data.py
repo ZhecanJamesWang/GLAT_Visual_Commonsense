@@ -17,9 +17,10 @@ class VG_data(Dataset):
     def __init__(self, data_root='/data/', status='train'):
         super(VG_data, self).__init__()
 
-        data_num = 10000
+        # data_num = 10000
+        name = '_'.join([str(10000), str(2000)])
 
-        with open(os.path.join(data_root, 'vocab_clean_{}.pkl'.format(str(data_num))), 'rb') as f:
+        with open(os.path.join(data_root, 'vocab_clean_{}.pkl'.format(name)), 'rb') as f:
             self.vocab = pickle.load(f, encoding='latin')
         # self.vocab_encoder = self.vocab['encoder']
         # self.vocab_decoder = self.vocab['decoder']
@@ -55,9 +56,9 @@ class VG_data(Dataset):
         #     self.rel_data = json.load(f)
 
         if self.status == 'train':
-            self.data_root = os.path.join(data_root, 'train_VG_clean_{}.pkl'.format(str(data_num)))
+            self.data_root = os.path.join(data_root, 'train_VG_clean_{}.pkl'.format(name))
         else:
-            self.data_root = os.path.join(data_root, 'test_VG_clean_{}.pkl'.format(str(data_num)))
+            self.data_root = os.path.join(data_root, 'test_VG_clean_{}.pkl'.format(name))
 
         with open(self.data_root,'rb') as f:
             self.data = pickle.load(f, encoding='latin')
@@ -130,8 +131,8 @@ if __name__ == '__main__':
     time1 = time.time()
     train_dataset.get_stats()
     # print('Load model and data{}'.format(time1-time0))
-    # gt_embed, input_embed, adj, input_mask = train_dataset.__getitem__(0)
+    gt_embed, input_embed, adj, input_mask = train_dataset.__getitem__(0)
     # print('build data graph and embedding{}'.format(time.time()-time1))
-    # pdb.set_trace()
+    pdb.set_trace()
 
 

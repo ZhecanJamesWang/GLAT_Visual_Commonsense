@@ -382,7 +382,7 @@ class Ensemble_encoder(nn.Module):
         print("nhid_trans: ", nhid_trans)
         print("int(nhid_trans/2): ", int(nhid_trans/2))
 
-        self.Pred_connect = Connect_Cls(nhid_trans, int(nhid_trans/2), 2)
+        self.Pred_connect = Connect_Cls(nhid_trans, int(nhid_trans/2), 3)
 
         self.blank = blank
 
