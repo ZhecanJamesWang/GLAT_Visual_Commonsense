@@ -84,7 +84,6 @@ args.lr = 0.0001
 args.step_size = 15 # tuning this number, maybe change this to adaptive learning rate in the future depending on the loss
 args.ratio = 5
 args.if_max_length_fix = True
-args.if_inference = True
 
 # record_file_name = date + "_{}g_{}t_concat_no_init_mask.txt".format(args.GAT_num, args.Trans_num)
 
@@ -265,23 +264,22 @@ model = GLATNET(vocab_num=vocab_num,
 model = model.to(device=device)
 # model = nn.DataParallel(model)
 
-if not args.if_inference:
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    # scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[14, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125], gamma=0.5)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
+optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+# scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[14, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125], gamma=0.5)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
 
-    # cri_rec = torch.nn.CrossEntropyLoss()
-    # cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
-    cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
-    cri_rec = cri_rec.to(device=device)
+# cri_rec = torch.nn.CrossEntropyLoss()
+# cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
+cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
+cri_rec = cri_rec.to(device=device)
 
-    # cri_con = torch.nn.CrossEntropyLoss()
-    # cri_con = torch.nn.NLLLoss(ignore_index=blank_idx)
-    cri_con = torch.nn.NLLLoss()
-    cri_con = cri_con.to(device=device)
+# cri_con = torch.nn.CrossEntropyLoss()
+# cri_con = torch.nn.NLLLoss(ignore_index=blank_idx)
+cri_con = torch.nn.NLLLoss()
+cri_con = cri_con.to(device=device)
 
 
-    writer = SummaryWriter(log_dir="my_experiment", filename_suffix=record_file_name.split('.')[0])
+writer = SummaryWriter(log_dir="my_experiment", filename_suffix=record_file_name.split('.')[0])
 
 def train(epoch):
     model.train()
@@ -552,132 +550,15 @@ def test(epoch):
     save_to_record("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
 
 
-def inference(path):
-    global model
-
-    model.eval()
-
-    model, epoch, acc = utils.load_model(model, path)
-
-    t = time.time()
-
-    loss_total_rec = 0
-    loss_totoal_con = 0
-    num_sample = 0
-    node_acc = utils.Counter(classes=vocab_num)
-    node_acc_mask = utils.Counter(classes=vocab_num)
-    edge_acc = utils.Counter(classes=3)
-
-    for i, (gt_embed, input_embed, adj_con, adj_lbl, input_mask, pad_masks) in enumerate(test_loader):
-        print("gt_embed.size(): ", gt_embed.size())
-        print("input_mask.size: ", input_mask.size())
-        print("gt_embed.detach().cpu().numpy(): ", gt_embed.detach().cpu().numpy()[0][0])
-        print("input_mask.detach().cpu().numpy(): ", input_mask.detach().cpu().numpy()[0][0])
-
-        pdb.set_trace()
-
-        input_embed = input_embed.to(device=device)
-        # adj = adj.to(device=device)
-        adj_con = adj_con.to(device=device)
-        adj_lbl = adj_lbl.to(device=device)
-        gt_embed = gt_embed.to(device=device)
-        pad_masks = pad_masks.to(device=device)
-        input_mask = input_mask.to(device=device)
-
-        # input_mask = input_mask.to(device=device)
-
-        input_embed = input_embed.squeeze(-1)
-        gt_embed = gt_embed.squeeze(-1)
-        pad_masks = pad_masks.squeeze(-1)
-        input_mask = input_mask.squeeze(-1)
-
-        if adj_con.size(1) == 1:
-            print('{} skip for 1 node'.format(i))
-            continue
-        else:
-            pred_label, pred_connect = model(input_embed, adj_con)
-            print("pred_label: ", pred_label.size())
-            print("pred_connect: ", pred_connect.size())
-            print("pred_label: ", pred_labeldetach().cpu().numpy()[0])
-            print("pred_connect: ", pred_connectdetach().cpu().numpy()[0])
-            pdb.set_trace()
-
-            pred_label_flat = pred_label.view(-1, pred_label.size(-1))
-            # gt_embed = gt_embed.squeeze(-1).view(-1)
-            gt_embed_flat = gt_embed.view(-1)
-            pos_mask, pos_mask_1, pos_mask_2, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj_con, adj_lbl)
-
-            # pdb.set_trace()
-            pred_label_mask = pred_label_flat[input_mask.view(-1)==1]
-            gt_embed_mask = gt_embed_flat[input_mask.view(-1)==1]
-
-            pred_connect_eff = torch.cat((pred_connect[pos_mask_1], pred_connect[pos_mask_2], pred_connect[neg_mask]), 0)
-            gt_edge_eff = torch.cat((torch.ones(len(pos_mask_1)), 2 * torch.ones(len(pos_mask_2)), torch.zeros(len(neg_mask))), 0).long()
-
-            # pred_connect_eff = torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
-            # gt_edge_eff = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(neg_mask))), 0).long()
-
-            pred_label_eff = pred_label_flat[pad_masks.view(-1)==0]
-            gt_embed_eff = gt_embed_flat[pad_masks.view(-1)==0]
-            # loss_rec = cri_rec(pred_label_eff, gt_embed_eff)
-            loss_rec = cri_rec(pred_label_flat, gt_embed_flat)
-            loss_con = cri_con(pred_connect_eff, gt_edge_eff.to(device=device))
-            # loss = loss_rec + loss_con
-
-            num_sample += 1
-            loss_total_rec += loss_rec.item()
-            loss_totoal_con += loss_con.item()
-
-            node_acc_mask.add(pred_label_mask, gt_embed_mask)
-            node_acc.add(pred_label_eff, gt_embed_eff)
-            edge_acc.add(pred_connect_eff, gt_edge_eff)
-        # torch.cuda.empty_cache()
-
-    print('Test Epoch Finished: {:04d} '.format(epoch),
-      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
-      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
-          'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
-          'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
-          'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
-          'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
-                                                                edge_acc.class_acc()[1],
-                                                                edge_acc.class_acc()[2]),
-          'edge_acc_eff_recall: {:.4f} {:4f}'.format(edge_acc.recall()[1], edge_acc.recall()[2]),
-      # 'acc_train: {:.4f}'.format(acc_train.item()),
-      # 'loss_val: {:.4f}'.format(loss_val.item()),
-      # 'acc_val: {:.4f}'.format(acc_val.item()),
-      'time: {:.4f}s '.format(time.time() - t))
-    save_to_record("".join(['Test Epoch Finished: {:04d} '.format(epoch),
-      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
-      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
-      'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
-      'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
-      'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
-      'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
-                                                            edge_acc.class_acc()[1],
-                                                            edge_acc.class_acc()[2]),
-      'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc.recall()[1], edge_acc.recall()[2]),
-      # 'acc_train: {:.4f}'.format(acc_train.item()),
-      # 'loss_val: {:.4f}'.format(loss_val.item()),
-      # 'acc_val: {:.4f}'.format(acc_val.item()),
-      'time: {:.4f}s '.format(time.time() - t)]))
-
-    print("best node_mask_acc {:.4f}".format(acc_recorder.get_best_test_node_mask_acc()))
-    print("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
-
-
 t_total = time.time()
 
 
-if args.if_inference:
-    inference(args.model_pretrained_path)
-else:
-    for epoch in range(args.epochs):
-        scheduler.step()
+for epoch in range(args.epochs):
+    scheduler.step()
 
-        train(epoch)
-        # if (epoch+1) % 5 == 0:
-        test(epoch)
+    train(epoch)
+    # if (epoch+1) % 5 == 0:
+    test(epoch)
 
 writer.close()
 print("Optimization Finished!")

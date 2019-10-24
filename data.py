@@ -70,9 +70,6 @@ class VG_data(Dataset):
         gt_embed = self.data['gt_embed_ali'][idx]
         adj = self.data['adj'][idx]
 
-        print("gt_embed: ", gt_embed)
-        pdb.set_trace()
-
         mask_num = math.ceil(gt_embed.shape[0] * self.mask_prob)
         mask_idx = random.sample(range(0, gt_embed.shape[0]), mask_num)
         input_mask = np.zeros((gt_embed.shape[0], 1), dtype=int)
