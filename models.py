@@ -347,7 +347,7 @@ class GLATNET(nn.Module):
         self.GLAT_Seq = GLAT_Seq(vocab_num, feat_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, types)
 
         self.Pred_label = Pred_label(self.GLAT_Seq)
-        self.Pred_connect = Connect_Cls(nhid_glat_g, int(nhid_glat_g/ 2), 2)
+        self.Pred_connect = Connect_Cls(nhid_glat_g, int(nhid_glat_g/ 2), 3)
 
         self.blank = blank
 
@@ -390,7 +390,7 @@ class Baseline(nn.Module):
         print("nhid_trans: ", nhid_trans)
         print("int(nhid_trans/2): ", int(nhid_trans/2))
 
-        self.Pred_connect = Connect_Cls(nhid_trans, int(nhid_trans/2), 2)
+        self.Pred_connect = Connect_Cls(nhid_trans, int(nhid_trans/2), 3)
 
         self.blank = blank
 

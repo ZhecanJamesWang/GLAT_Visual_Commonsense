@@ -70,26 +70,17 @@ def normalize(mx):
     return mx
 
 
-def load_model(model, epoch, filename, model_path, foldername, best_acc):
+def load_model(model, path):
 
-    model = torch.load(path)
-    model.eval()
-
-    diretory = os.path.join(model_path, foldername)
-
-    if not os.path.exists(diretory):
-        os.makedirs(diretory)
-
-    ckpt = dict(
-        epoch=epoch,
-        best_acc=best_acc,
-        model=model.state_dict(),
-    )
-
-    path = os.path.join(diretory, filename)
-    torch.save(ckpt, path)
-    print("model saved at: ", path)
-
+    if path != "":
+        checkpoint = torch.load(path)
+        model.load_state_dict(checkpoint['model'])
+        epoch = checkpoint['epoch']
+        acc = checkpoint['best_acc']
+    else:
+        epoch = -1
+        acc = -1
+    return model, epoch, acc
 
 def save_model(model, epoch, filename, model_path, foldername, best_acc):
 

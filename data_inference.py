@@ -66,12 +66,22 @@ class VG_data(Dataset):
 
         print('{} data num: {}'.format(status, len(self.data['gt_embed_ali'])))
 
+    def idx_to_name(self, idxs):
+        return self.vocab[idxs]
+
     def __getitem__(self, idx):
+        print("idx: ", idx)
         gt_embed = self.data['gt_embed_ali'][idx]
         adj = self.data['adj'][idx]
 
-        print("gt_embed: ", gt_embed)
-        pdb.set_trace()
+        # print("gt_embed: ", gt_embed)
+        # print("gt_embed.shape: ", gt_embed.shape)
+
+        names = self.idx_to_name(gt_embed)
+
+        names = []
+        for [idx_node] in gt_embed:
+            names.append(self.vocab[idx_node])
 
         mask_num = math.ceil(gt_embed.shape[0] * self.mask_prob)
         mask_idx = random.sample(range(0, gt_embed.shape[0]), mask_num)
@@ -95,7 +105,7 @@ class VG_data(Dataset):
         # print(idx)
 
         return torch.from_numpy(np.array(gt_embed)).long(), torch.from_numpy(np.array(input_embed)).long(),\
-               torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask))
+               torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask)), names
 
     def __len__(self):
         return len(self.data['gt_embed_ali'])

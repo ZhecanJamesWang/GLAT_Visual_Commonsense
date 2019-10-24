@@ -27,7 +27,7 @@ from tensorboardX import SummaryWriter
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -56,20 +56,27 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 # ===================
 # GLAT Model Additional Parameters
 # args.struct = [1, 1, 1]
-args.struct = [2, 2, 2]
+num_global = 0
+num_local = 0
+num_glat = 6
+
+args.struct = [1]*num_local + [0]*num_global +[2]*num_glat
+
+# args.struct = [0]*num_global + [1]*num_local +[2]*num_glat
 
 args.nhid_glat_g = 300
 args.nhid_glat_l = 300
 args.nout = args.nhid_glat_l
 # ===================
 # Baseline Model Parameters
+args.model_pretrained_path = ""
 args.Trans_num = 3
 args.GAT_num = 3  # increase attention multiple head parallel or in series
 args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
 args.n_heads = 8
-args.batch_size = 200
+args.batch_size = 20
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
@@ -77,6 +84,7 @@ args.lr = 0.0001
 args.step_size = 15 # tuning this number, maybe change this to adaptive learning rate in the future depending on the loss
 args.ratio = 5
 args.if_max_length_fix = True
+args.if_inference = True
 
 # record_file_name = date + "_{}g_{}t_concat_no_init_mask.txt".format(args.GAT_num, args.Trans_num)
 
@@ -88,12 +96,13 @@ args.outdir = "log/"
 args.model_outdir = "models/"
 
 global blank_idx
+global records
+global records_count
+global model
 
 device = 'cuda'
 
 home_path = os.getcwd()
-
-print(home_path)
 
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
@@ -105,10 +114,6 @@ if args.cuda:
 train_dataset = VG_data(status='train', data_root=os.path.join(home_path, 'data'))
 
 blank_idx = train_dataset.get_blank()
-
-global records
-global records_count
-
 
 records = ""
 records_count = 0
@@ -178,19 +183,22 @@ def my_collate(batch):
     gt_embeds = torch.cat(gt_embeds, 0)
     input_embeds = torch.cat(input_embeds, 0)
     adjs = torch.cat(adjs, 0)
+    adjs_lbl = adjs
+    adjs_con = torch.clamp(adjs, 0, 1)
     input_masks = torch.cat(input_masks, 0)
     pad_masks = torch.cat(pad_masks, 0)
     # if max_length > 100:
     #     print('max_length:', max_length)
     #     save_to_record("".join(['max_length:', str(max_length)]))
-    return [gt_embeds, input_embeds, adjs, input_masks, pad_masks]
+    return [gt_embeds, input_embeds, adjs_con, adjs_lbl, input_masks, pad_masks]
 
 
-def get_gt_edge(pad_masks, adj):
+def get_gt_edge(pad_masks, adjs_connect, adjs_label):
     '''
 
     :param pad_masks: (B, N)
-    :param adj:  (B, N, N)
+    :param adjs_connect:  (B, N, N) 0-nocon 1-con
+    :param adjs_label:  (B, N, N) 0-nocon 1-sub2pred, 2-pred2obj
     :return: pos_mask: (B*N*N)
              neg_mask: (B*N*N)
              bal_neg_mask: (B*N*N)
@@ -202,8 +210,12 @@ def get_gt_edge(pad_masks, adj):
 
     effective_mask = torch.mul((1-pad_masks).unsqueeze(-1), (1-pad_masks).unsqueeze(1))
     effective_mask = effective_mask.view(B, N*N).view(-1)
-    pos_mask = adj.view(B, N*N).view(-1)
-    neg_mask = (1-pos_mask).long()
+    # pos_mask = adj.view(B, N*N).view(-1)
+    pos_mask_label = adjs_label.view(B, N*N).view(-1)
+    pos_mask_label_1 = torch.nonzero(torch.eq(pos_mask_label, 1)).squeeze(-1)
+    pos_mask_label_2 = torch.nonzero(torch.eq(pos_mask_label, 2)).squeeze(-1)
+    pos_mask = adjs_connect.view(B, N*N).view(-1)
+    neg_mask = (1-pos_mask.clamp(0, 1)).long()
     neg_mask = torch.mul(neg_mask, effective_mask)
     bal_neg_mask = copy.deepcopy(neg_mask)
     if len(torch.nonzero(neg_mask)) > len(torch.nonzero(pos_mask)):
@@ -212,7 +224,7 @@ def get_gt_edge(pad_masks, adj):
         mask = random.sample(range(0, num_neg), num_neg - args.ratio * num_pos)
         bal_neg_mask[torch.nonzero(neg_mask)[mask]] = 0
 
-    return torch.nonzero(pos_mask).squeeze(-1), torch.nonzero(neg_mask).squeeze(-1), torch.nonzero(bal_neg_mask).squeeze(-1), torch.nonzero(effective_mask).squeeze(-1)
+    return torch.nonzero(pos_mask).squeeze(-1), pos_mask_label_1,  pos_mask_label_2, torch.nonzero(neg_mask).squeeze(-1), torch.nonzero(bal_neg_mask).squeeze(-1), torch.nonzero(effective_mask).squeeze(-1)
 
     # torch.cat((pad_masks.repeat(1, N).view(B, N * N), pad_masks.repeat(1, N, 1)), dim=2).view(B, N, -1, 2 * D)
 
@@ -253,22 +265,23 @@ model = GLATNET(vocab_num=vocab_num,
 model = model.to(device=device)
 # model = nn.DataParallel(model)
 
-optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-# scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[14, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125], gamma=0.5)
-scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
+if not args.if_inference:
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    # scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[14, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125], gamma=0.5)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
 
-# cri_rec = torch.nn.CrossEntropyLoss()
-# cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
-cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
-cri_rec = cri_rec.to(device=device)
+    # cri_rec = torch.nn.CrossEntropyLoss()
+    # cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
+    cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
+    cri_rec = cri_rec.to(device=device)
 
-# cri_con = torch.nn.CrossEntropyLoss()
-# cri_con = torch.nn.NLLLoss(ignore_index=blank_idx)
-cri_con = torch.nn.NLLLoss()
-cri_con = cri_con.to(device=device)
+    # cri_con = torch.nn.CrossEntropyLoss()
+    # cri_con = torch.nn.NLLLoss(ignore_index=blank_idx)
+    cri_con = torch.nn.NLLLoss()
+    cri_con = cri_con.to(device=device)
 
 
-writer = SummaryWriter(log_dir="my_experiment", filename_suffix=record_file_name.split('.')[0])
+    writer = SummaryWriter(log_dir="my_experiment", filename_suffix=record_file_name.split('.')[0])
 
 def train(epoch):
     model.train()
@@ -278,13 +291,15 @@ def train(epoch):
     num_sample = 0
     node_acc = utils.Counter(classes=vocab_num)
     node_acc_mask = utils.Counter(classes=vocab_num)
-    edge_acc_train = utils.Counter()
-    edge_acc_eff = utils.Counter()
+    edge_acc_train = utils.Counter(classes=3)
+    edge_acc_eff = utils.Counter(classes=3)
 
-    for i, (gt_embed, input_embed, adj, input_mask, pad_masks) in enumerate(train_loader):
+    for i, (gt_embed, input_embed, adj_con, adj_lbl, input_mask, pad_masks) in enumerate(train_loader):
 
         input_embed = input_embed.to(device=device)
-        adj = adj.to(device=device)
+        adj_con = adj_con.to(device=device)
+        adj_lbl = adj_lbl.to(device=device)
+        # adj = adj.to(device=device)
         gt_embed = gt_embed.to(device=device)
         pad_masks = pad_masks.to(device=device)
         input_mask = input_mask.to(device=device)
@@ -295,20 +310,20 @@ def train(epoch):
         pad_masks = pad_masks.squeeze(-1)
         input_mask = input_mask.squeeze(-1)
 
-        if adj.size(1) == 1:
+        if adj_con.size(1) == 1:
             print('{} skip for 1 node'.format(i))
             continue
         else:
-            pred_label, pred_connect = model(input_embed, adj)
+            pred_label, pred_connect = model(input_embed, adj_con)
             pred_label_flat = pred_label.view(-1, pred_label.size(-1))
             # gt_embed = gt_embed.squeeze(-1).view(-1)
             gt_embed_flat = gt_embed.view(-1)
-            pos_mask, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj)
-            pred_connect_train = torch.cat((pred_connect[pos_mask], pred_connect[bal_neg_mask]), 0)
-            gt_edge_train = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(bal_neg_mask))), 0).long()
+            pos_mask, pos_mask_1, pos_mask_2, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj_con, adj_lbl)
+            pred_connect_train = torch.cat((pred_connect[pos_mask_1], pred_connect[pos_mask_2], pred_connect[bal_neg_mask]), 0)
+            gt_edge_train = torch.cat((torch.ones(len(pos_mask_1)), 2 * torch.ones(len(pos_mask_2)), torch.zeros(len(bal_neg_mask))), 0).long()
 
-            pred_connect_eff = torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
-            gt_edge_eff = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(neg_mask))), 0).long()
+            pred_connect_eff = torch.cat((pred_connect[pos_mask_1], pred_connect[pos_mask_2], pred_connect[neg_mask]), 0)
+            gt_edge_eff = torch.cat((torch.ones(len(pos_mask_1)), 2 * torch.ones(len(pos_mask_2)), torch.zeros(len(neg_mask))), 0).long()
 
             # torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
             # torch.cat((torch.ones(num_list[0]), torch.zeros(num_list[1])), 0).long()
@@ -320,6 +335,7 @@ def train(epoch):
 
             # loss_rec = cri_rec(pred_label_eff, gt_embed_eff)
             loss_rec = cri_rec(pred_label_flat, gt_embed_flat)
+            # pdb.set_trace()
             loss_con = cri_con(pred_connect_train, gt_edge_train.to(device=device))
             # loss_con = cri_con(pred_connect_eff, gt_edge_eff.to(device=device))
             loss = loss_rec + loss_con
@@ -354,9 +370,10 @@ def train(epoch):
                       'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
                       'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
                       'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
-                      'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
-                                                                    edge_acc_eff.class_acc()[1]),
-                      'edge_acc_eff_recall: {:.4f} '.format(edge_acc_eff.recall()[0]),
+                      'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                                                                    edge_acc_eff.class_acc()[1],
+                                                                     edge_acc_eff.class_acc()[2]),
+                      'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc_eff.recall()[1], edge_acc_eff.recall()[2]),
                       'time: {:.4f}s '.format(time.time() - t))
                 # 'loss_val: {:.4f}'.format(loss_val.item()),
                 # 'acc_val: {:.4f}'.format(acc_val.item()),
@@ -367,9 +384,10 @@ def train(epoch):
                       'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
                       'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
                       'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
-                      'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
-                                                                    edge_acc_eff.class_acc()[1]),
-                      'edge_acc_eff_recall: {:.4f} '.format(edge_acc_eff.recall()[0]),
+                      'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                                                                    edge_acc_eff.class_acc()[1],
+                                                                     edge_acc_eff.class_acc()[2]),
+                      'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc_eff.recall()[1], edge_acc_eff.recall()[2]),
                       'time: {:.4f}s '.format(time.time() - t)]))
                 # 'loss_val: {:.4f}'.format(loss_val.item()),
                 # 'acc_val: {:.4f}'.format(acc_val.item()),
@@ -382,10 +400,11 @@ def train(epoch):
           'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
           'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
           'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
-          'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
-                                                        edge_acc_eff.class_acc()[1]),
-          'edge_acc_eff_recall: {:.4f} '.format(edge_acc_eff.recall()[0]),
-      # 'acc_train: {:.4f}'.format(acc_train.item()),
+          'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                                                        edge_acc_eff.class_acc()[1],
+                                                         edge_acc_eff.class_acc()[2]),
+          'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc_eff.recall()[1], edge_acc_eff.recall()[2]),
+          # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
       'time: {:.4f}s '.format(time.time() - t))
@@ -396,10 +415,12 @@ def train(epoch):
           'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
           'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
           'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
-          'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
-                                                        edge_acc_eff.class_acc()[1]),
-          'edge_acc_eff_recall: {:.4f} '.format(edge_acc_eff.recall()[0]),
-      # 'acc_train: {:.4f}'.format(acc_train.item()),
+          'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                                                        edge_acc_eff.class_acc()[1],
+                                                         edge_acc_eff.class_acc()[2]),
+          'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc_eff.recall()[1],
+                                                    edge_acc_eff.recall()[2]),
+                            # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
       'time: {:.4f}s '.format(time.time() - t)]))
@@ -410,8 +431,10 @@ def train(epoch):
     writer.add_scalar('train/edge_acc_train_overallacc', edge_acc_train.overall_acc(), epoch)
     writer.add_scalar('train/edge_acc_eff_overallacc', edge_acc_eff.overall_acc(), epoch)
     writer.add_scalar('train/edge_acc_eff_classacc_neg', edge_acc_eff.class_acc()[0], epoch)
-    writer.add_scalar('train/edge_acc_eff_classacc_pos', edge_acc_eff.class_acc()[1], epoch)
-    writer.add_scalar('train/edge_acc_eff_recall', edge_acc_eff.recall()[0], epoch)
+    writer.add_scalar('train/edge_acc_eff_classacc_pos1', edge_acc_eff.class_acc()[1], epoch)
+    writer.add_scalar('train/edge_acc_eff_classacc_pos2', edge_acc_eff.class_acc()[2], epoch)
+    writer.add_scalar('train/edge_acc_eff_recall1', edge_acc_eff.recall()[1], epoch)
+    writer.add_scalar('train/edge_acc_eff_recall2', edge_acc_eff.recall()[2], epoch)
 
 
 def test(epoch):
@@ -423,11 +446,13 @@ def test(epoch):
     num_sample = 0
     node_acc = utils.Counter(classes=vocab_num)
     node_acc_mask = utils.Counter(classes=vocab_num)
-    edge_acc = utils.Counter()
+    edge_acc = utils.Counter(classes=3)
 
-    for i, (gt_embed, input_embed, adj, input_mask, pad_masks) in enumerate(test_loader):
+    for i, (gt_embed, input_embed, adj_con, adj_lbl, input_mask, pad_masks) in enumerate(test_loader):
         input_embed = input_embed.to(device=device)
-        adj = adj.to(device=device)
+        # adj = adj.to(device=device)
+        adj_con = adj_con.to(device=device)
+        adj_lbl = adj_lbl.to(device=device)
         gt_embed = gt_embed.to(device=device)
         pad_masks = pad_masks.to(device=device)
         input_mask = input_mask.to(device=device)
@@ -439,21 +464,25 @@ def test(epoch):
         pad_masks = pad_masks.squeeze(-1)
         input_mask = input_mask.squeeze(-1)
 
-        if adj.size(1) == 1:
+        if adj_con.size(1) == 1:
             print('{} skip for 1 node'.format(i))
             continue
         else:
-            pred_label, pred_connect = model(input_embed, adj)
+            pred_label, pred_connect = model(input_embed, adj_con)
             pred_label_flat = pred_label.view(-1, pred_label.size(-1))
             # gt_embed = gt_embed.squeeze(-1).view(-1)
             gt_embed_flat = gt_embed.view(-1)
-            pos_mask, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj)
+            pos_mask, pos_mask_1, pos_mask_2, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj_con, adj_lbl)
+
             # pdb.set_trace()
             pred_label_mask = pred_label_flat[input_mask.view(-1)==1]
             gt_embed_mask = gt_embed_flat[input_mask.view(-1)==1]
 
-            pred_connect_eff = torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
-            gt_edge_eff = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(neg_mask))), 0).long()
+            pred_connect_eff = torch.cat((pred_connect[pos_mask_1], pred_connect[pos_mask_2], pred_connect[neg_mask]), 0)
+            gt_edge_eff = torch.cat((torch.ones(len(pos_mask_1)), 2 * torch.ones(len(pos_mask_2)), torch.zeros(len(neg_mask))), 0).long()
+
+            # pred_connect_eff = torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
+            # gt_edge_eff = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(neg_mask))), 0).long()
 
             pred_label_eff = pred_label_flat[pad_masks.view(-1)==0]
             gt_embed_eff = gt_embed_flat[pad_masks.view(-1)==0]
@@ -477,9 +506,10 @@ def test(epoch):
           'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
           'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
           'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
-          'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
-                                                        edge_acc.class_acc()[1]),
-          'edge_acc_eff_recall: {:.4f} '.format(edge_acc.recall()[0]),
+          'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
+                                                                edge_acc.class_acc()[1],
+                                                                edge_acc.class_acc()[2]),
+          'edge_acc_eff_recall: {:.4f} {:4f}'.format(edge_acc.recall()[1], edge_acc.recall()[2]),
       # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
@@ -487,12 +517,13 @@ def test(epoch):
     save_to_record("".join(['Test Epoch Finished: {:04d} '.format(epoch),
       'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
       'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
-          'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
-          'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
-          'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
-          'edge_acc_eff_classacc: {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
-                                                        edge_acc.class_acc()[1]),
-          'edge_acc_eff_recall: {:.4f} '.format(edge_acc.recall()[0]),
+      'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
+      'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+      'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
+      'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
+                                                            edge_acc.class_acc()[1],
+                                                            edge_acc.class_acc()[2]),
+      'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc.recall()[1], edge_acc.recall()[2]),
       # 'acc_train: {:.4f}'.format(acc_train.item()),
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
@@ -503,8 +534,10 @@ def test(epoch):
     writer.add_scalar('test/node_acc_mask_train', node_acc_mask.overall_acc(), epoch)
     writer.add_scalar('test/edge_acc_eff_overallacc', edge_acc.overall_acc(), epoch)
     writer.add_scalar('test/edge_acc_eff_classacc_neg', edge_acc.class_acc()[0], epoch)
-    writer.add_scalar('test/edge_acc_eff_classacc_pos', edge_acc.class_acc()[1], epoch)
-    writer.add_scalar('test/edge_acc_eff_recall', edge_acc.recall()[0], epoch)
+    writer.add_scalar('train/edge_acc_eff_classacc_pos1', edge_acc.class_acc()[1], epoch)
+    writer.add_scalar('train/edge_acc_eff_classacc_pos2', edge_acc.class_acc()[2], epoch)
+    writer.add_scalar('train/edge_acc_eff_recall1', edge_acc.recall()[1], epoch)
+    writer.add_scalar('train/edge_acc_eff_recall2', edge_acc.recall()[2], epoch)
 
     if acc_recorder.compare_node_mask_acc(node_acc_mask.overall_acc()):
         utils.save_model(model, epoch, "best_test_node_mask_acc", args.model_outdir, record_file_name.split(".")[0],
@@ -519,29 +552,135 @@ def test(epoch):
     save_to_record("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
 
 
-# Train model
+def inference(path):
+    global model
+
+    model.eval()
+
+    model, epoch, acc = utils.load_model(model, path)
+
+    t = time.time()
+
+    loss_total_rec = 0
+    loss_totoal_con = 0
+    num_sample = 0
+    node_acc = utils.Counter(classes=vocab_num)
+    node_acc_mask = utils.Counter(classes=vocab_num)
+    edge_acc = utils.Counter(classes=3)
+
+    for i, (gt_embed, input_embed, adj_con, adj_lbl, input_mask, pad_masks) in enumerate(test_loader):
+        print("gt_embed.size(): ", gt_embed.size())
+        print("input_mask.size: ", input_mask.size())
+        print("gt_embed.detach().cpu().numpy(): ", gt_embed.detach().cpu().numpy()[0][0])
+        print("input_mask.detach().cpu().numpy(): ", input_mask.detach().cpu().numpy()[0][0])
+
+        pdb.set_trace()
+
+        input_embed = input_embed.to(device=device)
+        # adj = adj.to(device=device)
+        adj_con = adj_con.to(device=device)
+        adj_lbl = adj_lbl.to(device=device)
+        gt_embed = gt_embed.to(device=device)
+        pad_masks = pad_masks.to(device=device)
+        input_mask = input_mask.to(device=device)
+
+        # input_mask = input_mask.to(device=device)
+
+        input_embed = input_embed.squeeze(-1)
+        gt_embed = gt_embed.squeeze(-1)
+        pad_masks = pad_masks.squeeze(-1)
+        input_mask = input_mask.squeeze(-1)
+
+        if adj_con.size(1) == 1:
+            print('{} skip for 1 node'.format(i))
+            continue
+        else:
+            pred_label, pred_connect = model(input_embed, adj_con)
+            print("pred_label: ", pred_label.size())
+            print("pred_connect: ", pred_connect.size())
+            print("pred_label: ", pred_labeldetach().cpu().numpy()[0])
+            print("pred_connect: ", pred_connectdetach().cpu().numpy()[0])
+            pdb.set_trace()
+
+            pred_label_flat = pred_label.view(-1, pred_label.size(-1))
+            # gt_embed = gt_embed.squeeze(-1).view(-1)
+            gt_embed_flat = gt_embed.view(-1)
+            pos_mask, pos_mask_1, pos_mask_2, neg_mask, bal_neg_mask, effective_mask = get_gt_edge(pad_masks, adj_con, adj_lbl)
+
+            # pdb.set_trace()
+            pred_label_mask = pred_label_flat[input_mask.view(-1)==1]
+            gt_embed_mask = gt_embed_flat[input_mask.view(-1)==1]
+
+            pred_connect_eff = torch.cat((pred_connect[pos_mask_1], pred_connect[pos_mask_2], pred_connect[neg_mask]), 0)
+            gt_edge_eff = torch.cat((torch.ones(len(pos_mask_1)), 2 * torch.ones(len(pos_mask_2)), torch.zeros(len(neg_mask))), 0).long()
+
+            # pred_connect_eff = torch.cat((pred_connect[pos_mask], pred_connect[neg_mask]), 0)
+            # gt_edge_eff = torch.cat((torch.ones(len(pos_mask)), torch.zeros(len(neg_mask))), 0).long()
+
+            pred_label_eff = pred_label_flat[pad_masks.view(-1)==0]
+            gt_embed_eff = gt_embed_flat[pad_masks.view(-1)==0]
+            # loss_rec = cri_rec(pred_label_eff, gt_embed_eff)
+            loss_rec = cri_rec(pred_label_flat, gt_embed_flat)
+            loss_con = cri_con(pred_connect_eff, gt_edge_eff.to(device=device))
+            # loss = loss_rec + loss_con
+
+            num_sample += 1
+            loss_total_rec += loss_rec.item()
+            loss_totoal_con += loss_con.item()
+
+            node_acc_mask.add(pred_label_mask, gt_embed_mask)
+            node_acc.add(pred_label_eff, gt_embed_eff)
+            edge_acc.add(pred_connect_eff, gt_edge_eff)
+        # torch.cuda.empty_cache()
+
+    print('Test Epoch Finished: {:04d} '.format(epoch),
+      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+          'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
+          'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+          'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
+          'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
+                                                                edge_acc.class_acc()[1],
+                                                                edge_acc.class_acc()[2]),
+          'edge_acc_eff_recall: {:.4f} {:4f}'.format(edge_acc.recall()[1], edge_acc.recall()[2]),
+      # 'acc_train: {:.4f}'.format(acc_train.item()),
+      # 'loss_val: {:.4f}'.format(loss_val.item()),
+      # 'acc_val: {:.4f}'.format(acc_val.item()),
+      'time: {:.4f}s '.format(time.time() - t))
+    save_to_record("".join(['Test Epoch Finished: {:04d} '.format(epoch),
+      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+      'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
+      'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+      'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
+      'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
+                                                            edge_acc.class_acc()[1],
+                                                            edge_acc.class_acc()[2]),
+      'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc.recall()[1], edge_acc.recall()[2]),
+      # 'acc_train: {:.4f}'.format(acc_train.item()),
+      # 'loss_val: {:.4f}'.format(loss_val.item()),
+      # 'acc_val: {:.4f}'.format(acc_val.item()),
+      'time: {:.4f}s '.format(time.time() - t)]))
+
+    print("best node_mask_acc {:.4f}".format(acc_recorder.get_best_test_node_mask_acc()))
+    print("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
+
+
 t_total = time.time()
 
-save_to_record("")
 
-for epoch in range(args.epochs):
-    scheduler.step()
+if args.if_inference:
+    inference(args.model_pretrained_path)
+else:
+    for epoch in range(args.epochs):
+        scheduler.step()
 
-    train(epoch)
-
-    # if (epoch+1) % 5 == 0:
-    test(epoch)
+        train(epoch)
+        # if (epoch+1) % 5 == 0:
+        test(epoch)
 
 writer.close()
 print("Optimization Finished!")
 print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
-# Testing
-# test()
 
-
-# Todo:
-# 1. loss
-# 2. dimension matching
-# 3. saving & loading vocab info
-# 4. (argument of Attention kvq)
