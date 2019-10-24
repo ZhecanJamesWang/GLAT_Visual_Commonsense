@@ -27,7 +27,7 @@ from tensorboardX import SummaryWriter
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -55,7 +55,9 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 # ToDo: hyperparameters connect with command line later
 # ===================
 # GLAT Model Additional Parameters
+# args.struct = [1, 1, 1]
 args.struct = [2, 2, 2]
+
 args.nhid_glat_g = 300
 args.nhid_glat_l = 300
 args.nout = args.nhid_glat_l
@@ -67,7 +69,7 @@ args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
 args.n_heads = 8
-args.batch_size = 10
+args.batch_size = 200
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
@@ -76,8 +78,10 @@ args.step_size = 15 # tuning this number, maybe change this to adaptive learning
 args.ratio = 5
 args.if_max_length_fix = True
 
-record_file_name = date + "_{}g_{}t_concat_no_init_mask.txt".format(args.GAT_num, args.Trans_num)
+# record_file_name = date + "_{}g_{}t_concat_no_init_mask.txt".format(args.GAT_num, args.Trans_num)
 
+args.struct = [str(num) for num in args.struct]
+record_file_name = date + "_" + "_".join(args.struct) + "_concat_no_init_mask.txt"
 # args.weight_decay = 1e-4
 
 args.outdir = "log/"
