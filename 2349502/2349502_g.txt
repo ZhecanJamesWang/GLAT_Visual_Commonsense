@@ -1,2 +1,0 @@
-rid person
-on on
