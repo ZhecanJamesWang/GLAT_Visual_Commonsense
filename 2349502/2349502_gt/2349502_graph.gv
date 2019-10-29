@@ -1,0 +1,12 @@
+digraph {
+	rankdir=RL
+	man_0 [label=man_0 color=blue fontsize=20 penwidth=2 shape=box style=rounded]
+	surfboard_0 [label=surfboard_0 color=red fontsize=20 penwidth=2 shape=box style=rounded]
+	person_0 [label=person_0 color=forestgreen fontsize=20 penwidth=2 shape=box style=rounded]
+	on_1 [label=on_1 fontsize=20 penwidth=2 shape=box style=rounded]
+	on_1 -> man_0 [arrowhead=none constraint=true penwidth=2]
+	on_1 -> surfboard_0 [arrowhead=none constraint=true penwidth=2 style=dashed]
+	on_2 [label=on_2 fontsize=20 penwidth=2 shape=box style=rounded]
+	on_2 -> person_0 [arrowhead=none constraint=true penwidth=2]
+	on_2 -> surfboard_0 [arrowhead=none constraint=true penwidth=2 style=dashed]
+}

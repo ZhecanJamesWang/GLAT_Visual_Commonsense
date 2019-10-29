@@ -52,6 +52,7 @@ print("finish loading: ", encoder_path, bpe_path)
 
 encoder = text_encoder.encoder
 new_categories = []
+type_list = []
 start_token = "<START>"
 end_token = "<END>"
 blank_token = "<blank>"
@@ -60,6 +61,7 @@ new_categories += [blank_token]
 new_categories += [start_token]
 new_categories += [end_token]
 new_categories += [mask_token]
+type_list.extend([0]*4)
 
 
 fix_vocabulary = 1
@@ -85,6 +87,7 @@ def preprocess_data(new_categories, rel_data, data_num):
     total_data['adj'] = []
     total_data['node_name'] = []
     total_data['gt_embed_ali'] = []
+    total_data['img_id'] = []
 
     if data_num == "full":
         data_length = len(rel_data)
@@ -105,6 +108,7 @@ def preprocess_data(new_categories, rel_data, data_num):
             # if len(text_encoder.encode([relationship['predicate']])[0]) != 1 and relationship['predicate'] not in new_categories:
             if relationship['predicate'] not in new_categories:
                 new_categories += [relationship['predicate'].lower()]
+                type_list.append(1)
 
             # pred_len = len(text_encoder.encode([relationship['predicate']])[0])
             nodes += [relationship['predicate'].lower()]
@@ -120,6 +124,7 @@ def preprocess_data(new_categories, rel_data, data_num):
                 # if len(text_encoder.encode([relationship['subject']['name']])[0]) != 1 and relationship['subject']['name'] not in new_categories:
                 if rel_data[idx]['objects'][relationship['sub_id']]['class'] not in new_categories:
                     new_categories += [rel_data[idx]['objects'][relationship['sub_id']]['class'].lower()]
+                    type_list.append(2)
 
                 # subj_len = len(text_encoder.encode([rel_data[idx]['objects'][relationship['sub_id']]['class']])[0])
                 node_idxs.append(relationship['sub_id'])
@@ -137,6 +142,7 @@ def preprocess_data(new_categories, rel_data, data_num):
                 # if len(text_encoder.encode([relationship['object']['name']])[0]) != 1 and relationship['object']['name'] not in new_categories:
                 if rel_data[idx]['objects'][relationship['obj_id']]['class'] not in new_categories:
                     new_categories += [rel_data[idx]['objects'][relationship['obj_id']]['class'].lower()]
+                    type_list.append(2)
 
                 # obj_len = len(text_encoder.encode([rel_data[idx]['objects'][relationship['obj_id']]['class']])[0])
                 node_idxs.append(relationship['obj_id'])
@@ -159,12 +165,13 @@ def preprocess_data(new_categories, rel_data, data_num):
         graph_gt_embed_ali = np.asarray([new_categories.index(node) for node in nodes])
         graph_gt_embed_ali = np.expand_dims(graph_gt_embed_ali, axis=1)
         total_data['gt_embed_ali'].append(graph_gt_embed_ali)
+        total_data['img_id'].append(int(rel_data[idx]['path'].split('.')[0]))
 
-    return total_data, new_categories
+    return total_data, new_categories, type_list
 
 
-train_data, new_categories = preprocess_data(new_categories, rel_data_train, data_num_train)
-test_data, new_categories = preprocess_data(new_categories, rel_data_test, data_num_test)
+train_data, new_categories, type_list = preprocess_data(new_categories, rel_data_train, data_num_train)
+test_data, new_categories, type_list = preprocess_data(new_categories, rel_data_test, data_num_test)
 
 
 
@@ -172,18 +179,24 @@ save_root = 'data/'
 if not os.path.exists(save_root):
     os.mkdir(save_root)
 
-filename = os.path.join(save_root, 'train_VG_clean_{}.pkl'.format('_'.join([str(data_num_train),str(data_num_test)])))
+filename = os.path.join(save_root, 'train_VG_clean_{}_image_id.pkl'.format('_'.join([str(data_num_train), str(data_num_test)])))
 with open(filename, 'wb') as f:
     pickle.dump(train_data, f)
 
-filename = os.path.join(save_root, 'test_VG_clean_{}.pkl'.format('_'.join([str(data_num_train),str(data_num_test)])))
+filename = os.path.join(save_root, 'test_VG_clean_{}_image_id.pkl'.format('_'.join([str(data_num_train), str(data_num_test)])))
 with open(filename, 'wb') as f:
     pickle.dump(test_data, f)
 
-filename = os.path.join(save_root, 'vocab_clean_{}.pkl'.format('_'.join([str(data_num_train),str(data_num_test)])))
+filename = os.path.join(save_root, 'vocab_clean_{}_image_id.pkl'.format('_'.join([str(data_num_train), str(data_num_test)])))
 
 with open(filename, 'wb') as f:
     pickle.dump(new_categories, f)
+
+filename = os.path.join(save_root, 'vocab_type_clean_{}_image_id.pkl'.format('_'.join([str(data_num_train), str(data_num_test)])))
+
+with open(filename, 'wb') as f:
+    pickle.dump(type_list, f)
+
 
 #
 # for category in new_categories:

@@ -77,6 +77,7 @@ def load_model(model, path):
         model.load_state_dict(checkpoint['model'])
         epoch = checkpoint['epoch']
         acc = checkpoint['best_acc']
+        print("successfully loading: ", path)
     else:
         epoch = -1
         acc = -1

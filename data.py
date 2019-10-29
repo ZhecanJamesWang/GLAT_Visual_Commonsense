@@ -13,6 +13,7 @@ import copy
 import random
 # from nltk.corpus import stopwords
 
+
 class VG_data(Dataset):
     def __init__(self, data_root='/data/', status='train'):
         super(VG_data, self).__init__()
@@ -21,13 +22,19 @@ class VG_data(Dataset):
         # name = '_'.join([str(10000), str(2000)])
         name = '_'.join(['full', 'full'])
 
-        with open(os.path.join(data_root, 'vocab_clean_{}.pkl'.format(name)), 'rb') as f:
+        with open(os.path.join(data_root, 'vocab_clean_{}_image_id.pkl'.format(name)), 'rb') as f:
             self.vocab = pickle.load(f, encoding='latin')
+
+        with open(os.path.join(data_root, 'vocab_type_clean_{}_image_id.pkl'.format(name)), 'rb') as f:
+            self.vocab_type = pickle.load(f, encoding='latin')
+
+
         # self.vocab_encoder = self.vocab['encoder']
         # self.vocab_decoder = self.vocab['decoder']
         # self.vocab_num = len(self.vocab_encoder.keys())
         self.vocab_num = len(self.vocab)
         self.mask_prob = 0.1
+        self.noise_prob = 0.5
 
         print('vocabulary number', self.vocab_num)
 
@@ -57,9 +64,9 @@ class VG_data(Dataset):
         #     self.rel_data = json.load(f)
 
         if self.status == 'train':
-            self.data_root = os.path.join(data_root, 'train_VG_clean_{}.pkl'.format(name))
+            self.data_root = os.path.join(data_root, 'train_VG_clean_{}_image_id.pkl'.format(name))
         else:
-            self.data_root = os.path.join(data_root, 'test_VG_clean_{}.pkl'.format(name))
+            self.data_root = os.path.join(data_root, 'test_VG_clean_{}_image_id.pkl'.format(name))
 
         with open(self.data_root,'rb') as f:
             self.data = pickle.load(f, encoding='latin')
@@ -78,8 +85,65 @@ class VG_data(Dataset):
         input_embed = copy.deepcopy(gt_embed)
 
         if len(mask_idx) != 0:
-            input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"))
             # input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"+"</w>"))
+
+            noise_num = math.ceil(len(mask_idx) * self.noise_prob)
+
+            # pdb.set_trace()
+
+
+            # noise_idx = random.choices(mask_idx, k=noise_num)
+
+            mask_idx_copy = copy.deepcopy(mask_idx)
+
+            noise_idx = []
+            for i in range(noise_num):
+                noise_idx += [mask_idx_copy.pop()]
+
+            # pdb.set_trace()
+
+            # noise_idx = random.sample(range(0, len(self.vocab_type)), noise_num)
+
+            # if len(noise_idx) != 0:
+            #     for idx in noise_idx:
+            #         if self.vocab_type[idx] != type_target:
+
+
+            # while (self.vocab_type[noise_idx] !=)
+
+            # pdb.set_trace()
+
+            for idx in mask_idx:
+                # pdb.set_trace()
+                if idx not in noise_idx:
+                    input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"))
+                    # pdb.set_trace()
+
+                else:
+                    type_idx = gt_embed[idx][0]
+
+                    # pdb.set_trace()
+
+                    target_type = self.vocab_type[type_idx]
+
+                    # pdb.set_trace()
+
+                    noise_sample_type = -1
+
+                    # pdb.set_trace()
+
+                    while(noise_sample_type != target_type):
+                        noise_sample_idx = random.sample(range(0, len(self.vocab_type)), 1)[0]
+
+                        # pdb.set_trace()
+
+                        noise_sample_type = self.vocab_type[noise_sample_idx]
+
+                    # pdb.set_trace()
+
+                    input_embed[mask_idx] = np.array(noise_sample_idx)
+
+                    # pdb.set_trace()
 
         # input_embed[mask_idx] = np.array(self.vocab_encoder["<MASK>"+"</w>"])
         # input_embed[mask_idx] = np.array(self.text_encoder.encoder["<MASK>"])
@@ -90,6 +154,8 @@ class VG_data(Dataset):
         # mask_idx = self.data['mask_idx'][idx]
         # pdb.set_trace()
         # print(idx)
+
+        # pdb.set_trace()
 
         return torch.from_numpy(np.array(gt_embed)).long(), torch.from_numpy(np.array(input_embed)).long(),\
                torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask))

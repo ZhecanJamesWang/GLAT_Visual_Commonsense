@@ -12,6 +12,9 @@ import math
 import copy
 import random
 # from nltk.corpus import stopwords
+import random
+random.seed(3)
+
 
 class VG_data(Dataset):
     def __init__(self, data_root='/data/', status='train'):
@@ -21,7 +24,7 @@ class VG_data(Dataset):
         # name = '_'.join([str(10000), str(2000)])
         name = '_'.join(['full', 'full'])
 
-        with open(os.path.join(data_root, 'vocab_clean_{}.pkl'.format(name)), 'rb') as f:
+        with open(os.path.join(data_root, 'vocab_clean_{}_image_id.pkl'.format(name)), 'rb') as f:
             self.vocab = pickle.load(f, encoding='latin')
         # self.vocab_encoder = self.vocab['encoder']
         # self.vocab_decoder = self.vocab['decoder']
@@ -57,27 +60,22 @@ class VG_data(Dataset):
         #     self.rel_data = json.load(f)
 
         if self.status == 'train':
-            self.data_root = os.path.join(data_root, 'train_VG_clean_{}.pkl'.format(name))
+            self.data_root = os.path.join(data_root, 'train_VG_clean_{}_image_id.pkl'.format(name))
         else:
-            self.data_root = os.path.join(data_root, 'test_VG_clean_{}.pkl'.format(name))
+            self.data_root = os.path.join(data_root, 'test_VG_clean_{}_image_id.pkl'.format(name))
 
         with open(self.data_root,'rb') as f:
             self.data = pickle.load(f, encoding='latin')
 
         print('{} data num: {}'.format(status, len(self.data['gt_embed_ali'])))
 
-    def idx_to_name(self, idxs):
-        return self.vocab[idxs]
-
     def __getitem__(self, idx):
-        print("idx: ", idx)
+        # print("idx: ", idx)
         gt_embed = self.data['gt_embed_ali'][idx]
         adj = self.data['adj'][idx]
 
         # print("gt_embed: ", gt_embed)
         # print("gt_embed.shape: ", gt_embed.shape)
-
-        names = self.idx_to_name(gt_embed)
 
         names = []
         for [idx_node] in gt_embed:
@@ -94,6 +92,8 @@ class VG_data(Dataset):
             input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"))
             # input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"+"</w>"))
 
+        img_id = self.data['img_id'][idx]
+
         # input_embed[mask_idx] = np.array(self.vocab_encoder["<MASK>"+"</w>"])
         # input_embed[mask_idx] = np.array(self.text_encoder.encoder["<MASK>"])
 
@@ -105,10 +105,13 @@ class VG_data(Dataset):
         # print(idx)
 
         return torch.from_numpy(np.array(gt_embed)).long(), torch.from_numpy(np.array(input_embed)).long(),\
-               torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask)), names
+               torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask)), names, img_id
 
     def __len__(self):
         return len(self.data['gt_embed_ali'])
+
+    def idx_to_name(self, idxs):
+        return self.vocab[idxs]
 
     def vocabnum(self):
         return self.vocab_num

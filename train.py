@@ -27,7 +27,7 @@ from tensorboardX import SummaryWriter
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -76,7 +76,7 @@ args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
 args.n_heads = 8
-args.batch_size = 20
+args.batch_size = 50
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
@@ -166,6 +166,7 @@ def my_collate(batch):
     adjs = []
     input_masks = []
     pad_masks = []
+
     for i, (gt_embed, input_embed, adj, input_mask) in enumerate(batch):
         if i not in remove_list:
             # print(i)
@@ -179,6 +180,7 @@ def my_collate(batch):
             input_masks.append(torch.cat((input_mask, torch.zeros(max_length-input_mask.size(0),1, dtype=torch.long)), 0).unsqueeze(0))
             # pdb.set_trace()
             pad_masks.append(torch.cat((torch.zeros_like(gt_embed), torch.ones(max_length-gt_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
+
     gt_embeds = torch.cat(gt_embeds, 0)
     input_embeds = torch.cat(input_embeds, 0)
     adjs = torch.cat(adjs, 0)

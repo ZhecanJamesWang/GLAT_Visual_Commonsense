@@ -1,0 +1,8 @@
+digraph {
+	rankdir=RL
+	building_0 [label=building_0 color=blue fontsize=20 penwidth=2 shape=box style=rounded]
+	kite_0 [label=kite_0 color=red fontsize=20 penwidth=2 shape=box style=rounded]
+	under_1 [label=under_1 fontsize=20 penwidth=2 shape=box style=rounded]
+	under_1 -> building_0 [arrowhead=none constraint=true penwidth=2]
+	under_1 -> kite_0 [arrowhead=none constraint=true penwidth=2 style=dashed]
+}

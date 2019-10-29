@@ -27,7 +27,7 @@ from tensorboardX import SummaryWriter
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -57,8 +57,8 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 # GLAT Model Additional Parameters
 # args.struct = [1, 1, 1]
 num_global = 0
-num_local = 0
-num_glat = 6
+num_local = 12
+num_glat = 0
 
 args.struct = [1]*num_local + [0]*num_global +[2]*num_glat
 
@@ -69,14 +69,17 @@ args.nhid_glat_l = 300
 args.nout = args.nhid_glat_l
 # ===================
 # Baseline Model Parameters
-args.model_pretrained_path = ""
+# args.model_pretrained_path = "/home/tangtangwzc/Common_sense/models/2019-10-24-00-38_2_2_2_2_2_2_concat_no_init_mask/best_test_node_mask_acc.pth"
+# args.model_pretrained_path = "/home/tangtangwzc/Common_sense/models/2019-10-24-00-35_0_0_0_0_0_0_0_0_0_0_0_0_concat_no_init_mask/best_test_node_mask_acc"
+args.model_pretrained_path = "/home/tangtangwzc/Common_sense/models/2019-10-24-00-36_1_1_1_1_1_1_1_1_1_1_1_1_concat_no_init_mask/best_test_node_mask_acc"
+
 args.Trans_num = 3
 args.GAT_num = 3  # increase attention multiple head parallel or in series
 args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
 args.n_heads = 8
-args.batch_size = 20
+args.batch_size = 100
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
@@ -94,6 +97,9 @@ args.struct = [str(num) for num in args.struct]
 
 args.outdir = "log/"
 args.model_outdir = "models/"
+
+# args.output_intermedia = "/kiwi-data/projects/commonsense/shared/alireza_repo/viz_result/"
+args.output_intermedia = "intermediate/"
 
 global blank_idx
 global records
@@ -145,7 +151,7 @@ acc_recorder = utils.Record()
 #
 #
 # save_to_record(str(args))
-#
+
 
 def my_collate(batch):
     max_length = 0
@@ -167,7 +173,8 @@ def my_collate(batch):
     input_masks = []
     pad_masks = []
     names = []
-    for i, (gt_embed, input_embed, adj, input_mask, name) in enumerate(batch):
+    img_ids = []
+    for i, (gt_embed, input_embed, adj, input_mask, name, img_id) in enumerate(batch):
         if i not in remove_list:
             # print(i)
             gt_embeds.append(torch.cat((gt_embed, blank_idx*torch.ones(max_length-gt_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
@@ -181,6 +188,8 @@ def my_collate(batch):
             # pdb.set_trace()
             pad_masks.append(torch.cat((torch.zeros_like(gt_embed), torch.ones(max_length-gt_embed.size(0), 1, dtype=torch.long)), 0).unsqueeze(0))
             names.append(name)
+            img_ids.append(img_id)
+
     gt_embeds = torch.cat(gt_embeds, 0)
     input_embeds = torch.cat(input_embeds, 0)
     adjs = torch.cat(adjs, 0)
@@ -191,7 +200,7 @@ def my_collate(batch):
     # if max_length > 100:
     #     print('max_length:', max_length)
     #     save_to_record("".join(['max_length:', str(max_length)]))
-    return [gt_embeds, input_embeds, adjs_con, adjs_lbl, input_masks, pad_masks, names]
+    return [gt_embeds, input_embeds, adjs_con, adjs_lbl, input_masks, pad_masks, names, img_ids]
 
 
 def get_gt_edge(pad_masks, adjs_connect, adjs_label):
@@ -205,6 +214,7 @@ def get_gt_edge(pad_masks, adjs_connect, adjs_label):
              bal_neg_mask: (B*N*N)
              effective_mask: (B*N*N) 1 denote no-padding
     '''
+
     B = pad_masks.size(0)
     N = pad_masks.size(1)
     # D = 1
@@ -281,6 +291,14 @@ model = model.to(device=device)
 #     cri_con = torch.nn.NLLLoss()
 #     cri_con = cri_con.to(device=device)
 
+cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
+cri_rec = cri_rec.to(device=device)
+
+# cri_con = torch.nn.CrossEntropyLoss()
+# cri_con = torch.nn.NLLLoss(ignore_index=blank_idx)
+cri_con = torch.nn.NLLLoss()
+cri_con = cri_con.to(device=device)
+
 
 def inference(path):
     global model
@@ -298,16 +316,23 @@ def inference(path):
     node_acc_mask = utils.Counter(classes=vocab_num)
     edge_acc = utils.Counter(classes=3)
 
-    for i, (gt_embed, input_embed, adj_con, adj_lbl, input_mask, pad_masks, names) in enumerate(test_loader):
-        print("names: ", names)
-        print("names: ", len(names))
+    predict_nodes = []
+    label_nodes = []
+    # mask_nodes = []
+    Image_ids = []
 
-        print("gt_embed.size(): ", gt_embed.size())
-        print("input_mask.size: ", input_mask.size())
-        print("gt_embed.detach().cpu().numpy(): ", gt_embed.detach().cpu().numpy()[0][0])
-        print("input_mask.detach().cpu().numpy(): ", input_mask.detach().cpu().numpy()[0][0])
+    for i, (gt_embed, input_embed, adj_con, adj_lbl, input_mask, pad_masks, names, image_ids) in enumerate(test_loader):
+        print("i: ", i)
+        print(test_dataset.__len__())
+        # print("names: ", names)
+        # print("names: ", len(names))
 
-        pdb.set_trace()
+        # print("gt_embed.size(): ", gt_embed.size())
+        # print("input_mask.size: ", input_mask.size())
+        # print("gt_embed.detach().cpu().numpy(): ", gt_embed.detach().cpu().numpy()[0][0])
+        # print("input_mask.detach().cpu().numpy(): ", input_mask.detach().cpu().numpy()[0][0])
+        #
+        # pdb.set_trace()
 
         input_embed = input_embed.to(device=device)
         # adj = adj.to(device=device)
@@ -329,11 +354,70 @@ def inference(path):
             continue
         else:
             pred_label, pred_connect = model(input_embed, adj_con)
-            print("pred_label: ", pred_label.size())
-            print("pred_connect: ", pred_connect.size())
-            print("pred_label: ", pred_labeldetach().cpu().numpy()[0])
-            print("pred_connect: ", pred_connectdetach().cpu().numpy()[0])
-            pdb.set_trace()
+            # print("pred_label: ", pred_label.size())
+            # print("pred_connect: ", pred_connect.size())
+
+            #
+            # print("gt_embed.detach().cpu().numpy().shape: ", gt_embed.detach().cpu().numpy().shape)
+            # print("input_mask.detach().cpu().numpy()[0]: ", input_mask.detach().cpu().numpy()[0])
+            # print("gt_embed.detach().cpu().numpy(): ", gt_embed.detach().cpu().numpy()[0])
+            # print("torch.max(pred_label, dim=-1)[1][0]: ", torch.max(pred_label, dim=-1)[1][0])
+
+
+            for i in range(pred_label.size()[0]):
+                image_id = image_ids[i]
+
+                if int(image_id) == 2349502:
+                # if int(image_id) != 2349502:
+                    print("type(image_id): ", type(image_id))
+
+                    label = gt_embed.detach().cpu().numpy()[i]
+                    label_nodes.append(label)
+                    predict = torch.max(pred_label, dim=-1)[1][i]
+                    predict_nodes.append(predict)
+                    mask = input_mask.detach().cpu().numpy()[i]
+                    mask_index = np.where(mask==1)
+                    # print("mask_index: ", mask_index)
+                    # print("label[mask_index]: ", label[mask_index])
+                    # print("predict[mask_index]: ", predict[mask_index])
+
+                    # mask_node = []
+                    # for index in mask_index[0]:
+                    #     print(index)
+                    #     print(train_dataset.idx_to_name(label[index]))
+                    #     print(train_dataset.idx_to_name(predict[index]))
+                    label_node = [train_dataset.idx_to_name(label[index]) for index in mask_index[0]]
+                    predict_node = [train_dataset.idx_to_name(predict[index]) for index in mask_index[0]]
+
+                    label_node = [train_dataset.idx_to_name(labe) for labe in label]
+                    print("label_node: ", label_node)
+                    raise("debug")
+
+                    # label_nodes.append(label_node)
+                    # predict_nodes.append(predict_node)
+                    # # mask_nodes.append([mask_index])
+                    # Image_ids.append(image_id)
+                    #
+                    # path = args.output_intermedia + str(image_id) + "_l.txt"
+                    # # path = args.output_intermedia + str(image_id) + "_gt/predict.txt"
+                    #
+                    # # print(" ".join(label_node))
+                    # # print(" ".join(predict_node))
+                    # # print(image_id)
+                    # # print(path)
+                    #
+                    # content = " ".join(label_node) + "\n"
+                    # content += " ".join(predict_node) + "\n"
+                    #
+                    # fh = open(path, "a")
+                    # fh.write(content)
+                    # fh.close
+
+            # print("pred_label: ", pred_label.detach().cpu().numpy()[0])
+            # print("pred_label: ", pred_label.detach().cpu().numpy()[0])
+            # print("pred_connect: ", pred_connect.detach().cpu().numpy()[0])
+
+            # torch.max(pred_label, dim=-1)[1][0]
 
             pred_label_flat = pred_label.view(-1, pred_label.size(-1))
             # gt_embed = gt_embed.squeeze(-1).view(-1)
@@ -366,6 +450,8 @@ def inference(path):
             edge_acc.add(pred_connect_eff, gt_edge_eff)
         # torch.cuda.empty_cache()
 
+    np.savez(args.output_intermedia + "/test_data", predict_nodes=predict_nodes, label_nodes=label_nodes, image_id=Image_ids)
+
     print('Test Epoch Finished: {:04d} '.format(epoch),
       'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
       'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
@@ -380,24 +466,24 @@ def inference(path):
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
       'time: {:.4f}s '.format(time.time() - t))
-    save_to_record("".join(['Test Epoch Finished: {:04d} '.format(epoch),
-      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
-      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
-      'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
-      'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
-      'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
-      'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
-                                                            edge_acc.class_acc()[1],
-                                                            edge_acc.class_acc()[2]),
-      'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc.recall()[1], edge_acc.recall()[2]),
-      # 'acc_train: {:.4f}'.format(acc_train.item()),
-      # 'loss_val: {:.4f}'.format(loss_val.item()),
-      # 'acc_val: {:.4f}'.format(acc_val.item()),
-      'time: {:.4f}s '.format(time.time() - t)]))
+
+    # save_to_record("".join(['Test Epoch Finished: {:04d} '.format(epoch),
+    #   'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+    #   'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+    #   'node_acc_eff: {:.4f} '.format(node_acc.overall_acc()),
+    #   'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+    #   'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
+    #   'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
+    #                                                         edge_acc.class_acc()[1],
+    #                                                         edge_acc.class_acc()[2]),
+    #   'edge_acc_eff_recall: {:.4f} {:.4f}'.format(edge_acc.recall()[1], edge_acc.recall()[2]),
+    #   # 'acc_train: {:.4f}'.format(acc_train.item()),
+    #   # 'loss_val: {:.4f}'.format(loss_val.item()),
+    #   # 'acc_val: {:.4f}'.format(acc_val.item()),
+    #   'time: {:.4f}s '.format(time.time() - t)]))
 
     print("best node_mask_acc {:.4f}".format(acc_recorder.get_best_test_node_mask_acc()))
     print("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
-
 
 t_total = time.time()
 
