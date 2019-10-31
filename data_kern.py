@@ -20,23 +20,29 @@ class VG_data(Dataset):
 
         # data_num = 10000
         # name = '_'.join([str(10000), str(2000)])
-        name = '_'.join(['full', 'full'])
+        # name = '_'.join(['full', 'full'])
+        name = '_'.join(['20000', '1000', '5000'])
 
-        with open(os.path.join(data_root, 'vocab_clean_{}_image_id.pkl'.format(name)), 'rb') as f:
-            self.vocab = pickle.load(f, encoding='latin')
+        with open(os.path.join(data_root, 'ind_to_classes_{}.pkl'.format(name)), 'rb') as f:
+            self.ind_to_entities = pickle.load(f, encoding='latin')
+            self.ind_to_entities.append("<MASK>")
+            self.ind_to_entities.append("<blank>")
 
-        with open(os.path.join(data_root, 'vocab_type_clean_{}_image_id.pkl'.format(name)), 'rb') as f:
-            self.vocab_type = pickle.load(f, encoding='latin')
+        with open(os.path.join(data_root, 'ind_to_predicates_{}.pkl'.format(name)), 'rb') as f:
+            self.ind_to_predicates = pickle.load(f, encoding='latin')
+            self.ind_to_predicates.append("<MASK>")
+            # self.ind_to_predicates.append("<blank>")
+
 
 
         # self.vocab_encoder = self.vocab['encoder']
         # self.vocab_decoder = self.vocab['decoder']
         # self.vocab_num = len(self.vocab_encoder.keys())
-        self.vocab_num = len(self.vocab)
+        # self.vocab_num = len(self.vocab)
         self.mask_prob = 0.1
         self.noise_prob = 0.5
 
-        print('vocabulary number', self.vocab_num)
+        # print('vocabulary number', self.vocab_num)
 
 #         encoder_path = "./model/encoder_bpe_40000.json"
 #         bpe_path = "./model/vocab_40000.bpe"
@@ -64,123 +70,81 @@ class VG_data(Dataset):
         #     self.rel_data = json.load(f)
 
         if self.status == 'train':
-            self.data_root = os.path.join(data_root, 'train_VG_clean_{}_image_id.pkl'.format(name))
-        else:
-            self.data_root = os.path.join(data_root, 'test_VG_clean_{}_image_id.pkl'.format(name))
+            self.data_root = os.path.join(data_root, 'train_VG_kern_{}.pkl'.format(name))
+        elif self.status == 'eval':
+            self.data_root = os.path.join(data_root, 'eval_VG_kern_{}.pkl'.format(name))
+        elif self.status == 'test':
+            self.data_root = os.path.join(data_root, 'test_VG_kern_{}.pkl'.format(name))
 
         with open(self.data_root,'rb') as f:
             self.data = pickle.load(f, encoding='latin')
 
-        print('{} data num: {}'.format(status, len(self.data['gt_embed_ali'])))
+        print('{} data num: {}'.format(status, len(self.data['node_name'])))
 
     def __getitem__(self, idx):
-        gt_embed = self.data['gt_embed_ali'][idx]
+        node_class = self.data['node_class'][idx]
         adj = self.data['adj'][idx]
+        node_type = self.data['node_type'][idx]
 
-        mask_num = math.ceil(gt_embed.shape[0] * self.mask_prob)
-        mask_idx = random.sample(range(0, gt_embed.shape[0]), mask_num)
-        input_mask = np.zeros((gt_embed.shape[0], 1), dtype=int)
-        input_mask[mask_idx] = 1
+        entity_num = sum(node_type)
+        predicate_num = len(node_type) - entity_num
 
-        input_embed = copy.deepcopy(gt_embed)
+        # mask for predicate
+        mask_num_predicate = math.ceil(predicate_num * self.mask_prob)
+        mask_idx_predicate = random.sample(list(np.where(node_type == 0)[0]), mask_num_predicate)
+        input_mask = np.zeros(node_class.shape[0], dtype=int)  # 0-regular   1-mask/noise
+        input_mask[mask_idx_predicate] = 1
 
-        if len(mask_idx) != 0:
-            # input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"+"</w>"))
+        input_class = copy.deepcopy(node_class)
 
-            noise_num = math.ceil(len(mask_idx) * self.noise_prob)
+        if len(mask_idx_predicate) != 0:
 
-            # pdb.set_trace()
-
-
-            # noise_idx = random.choices(mask_idx, k=noise_num)
-
-            mask_idx_copy = copy.deepcopy(mask_idx)
-
+            noise_num = math.ceil(len(mask_idx_predicate) * self.noise_prob)
+            mask_idx_copy = copy.deepcopy(mask_idx_predicate)
             noise_idx = []
+
             for i in range(noise_num):
                 noise_idx += [mask_idx_copy.pop()]
 
-            # pdb.set_trace()
-
-            # noise_idx = random.sample(range(0, len(self.vocab_type)), noise_num)
-
-            # if len(noise_idx) != 0:
-            #     for idx in noise_idx:
-            #         if self.vocab_type[idx] != type_target:
-
-
-            # while (self.vocab_type[noise_idx] !=)
-
-            # pdb.set_trace()
-
-            for idx in mask_idx:
-                # pdb.set_trace()
-                if idx not in noise_idx:
-                    input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"))
-                    # pdb.set_trace()
+            for idx_node in mask_idx_predicate:
+                if idx_node not in noise_idx:
+                    input_class[idx_node] = self.ind_to_predicates.index("<MASK>")
 
                 else:
-                    type_idx = gt_embed[idx][0]
-
-                    # pdb.set_trace()
-
-                    target_type = self.vocab_type[type_idx]
-
-                    # pdb.set_trace()
-
-                    noise_sample_type = -1
-
-                    # pdb.set_trace()
-
-                    while(noise_sample_type != target_type):
-                        noise_sample_idx = random.sample(range(0, len(self.vocab_type)), 1)[0]
-
+                    target_type = node_type[idx_node]
+                    if target_type == 0:
                         # pdb.set_trace()
+                        input_class[idx_node] = random.sample(list(range(len(self.ind_to_predicates))), 1)[0]
+                    else:
+                        input_class[idx_node] = random.sample(list(range(len(self.ind_to_entities))), 1)[0]
 
-                        noise_sample_type = self.vocab_type[noise_sample_idx]
-
-                    # pdb.set_trace()
-
-                    input_embed[mask_idx] = np.array(noise_sample_idx)
-
-                    # pdb.set_trace()
-
-        # input_embed[mask_idx] = np.array(self.vocab_encoder["<MASK>"+"</w>"])
-        # input_embed[mask_idx] = np.array(self.text_encoder.encoder["<MASK>"])
-
-        # pdb.set_trace()
-
-        # gt_embed = self.data['gt_embed'][idx]
-        # mask_idx = self.data['mask_idx'][idx]
-        # pdb.set_trace()
-        # print(idx)
-
-        # pdb.set_trace()
-
-        return torch.from_numpy(np.array(gt_embed)).long(), torch.from_numpy(np.array(input_embed)).long(),\
-               torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask))
+        return torch.from_numpy(np.array(node_class)).long(), torch.from_numpy(np.array(input_class)).long(),\
+               torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask)).long(), torch.from_numpy(np.array(node_type)).long()
 
     def __len__(self):
-        return len(self.data['gt_embed_ali'])
+        return len(self.data['node_class'])
 
-    def vocabnum(self):
-        return self.vocab_num
+    # def vocab_num(self):
+    #     return self.vocab_num
+    def vocab_num(self):
+        return len(self.ind_to_predicates), len(self.ind_to_entities)
 
     def get_blank(self):
         # return self.vocab_encoder["<blank>" + "</w>"]
-        return self.vocab.index("<blank>")
+        return self.ind_to_entities.index("<blank>")
 
     def get_stats(self):
         len_data = [0]
-        for i, data in enumerate(self.data['gt_embed_ali']):
+        for i, data in enumerate(self.data['node_class']):
             len_data += [data.shape[0]]
         len_data = np.asarray(len_data)
         print('mean length:', np.mean(len_data))
         print('median length:', np.median(len_data))
         print('max length:', np.max(len_data))
         len_data_over = len_data[len_data>50]
-        pdb.set_trace()
+        # pdb.set_trace()
         return len_data
+
 
 def encode_onehot(labels):
     classes = set(labels)
@@ -191,15 +155,16 @@ def encode_onehot(labels):
     return labels_onehot
 
 if __name__ == '__main__':
-    home_path = os.getcwd()
+    # home_path = os.getcwd()
+    home_path = '/home/haoxuan/code/KERN'
 
     time0 = time.time()
     train_dataset = VG_data(status='train', data_root=os.path.join(home_path,'data'))
     time1 = time.time()
     train_dataset.get_stats()
     # print('Load model and data{}'.format(time1-time0))
-    gt_embed, input_embed, adj, input_mask = train_dataset.__getitem__(0)
+    node_class, input_class, adj, input_mask, node_type = train_dataset.__getitem__(0)
     # print('build data graph and embedding{}'.format(time.time()-time1))
-    pdb.set_trace()
+    # pdb.set_trace()
 
 

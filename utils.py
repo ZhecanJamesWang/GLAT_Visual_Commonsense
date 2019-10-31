@@ -137,7 +137,11 @@ class Counter(object):
         self.num_label = [0] * self.classes
 
     def add(self, pred, labels):
-        preds = pred.max(1)[1].type_as(labels)
+
+        if pred.size()[-1] != 1 and len(pred.size()) != 1:
+            preds = pred.max(1)[1].type_as(labels)
+        else:
+            preds = pred
 
         acc = preds == labels
 
