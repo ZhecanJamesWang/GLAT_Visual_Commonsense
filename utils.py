@@ -96,7 +96,7 @@ def save_model(model, epoch, filename, model_path, foldername, best_acc):
         model=model.state_dict(),
     )
 
-    path = os.path.join(diretory, filename)
+    path = os.path.join(diretory, filename + ".pth")
     torch.save(ckpt, path)
     print("model saved at: ", path)
 

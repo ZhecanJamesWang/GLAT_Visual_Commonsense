@@ -27,7 +27,7 @@ from tensorboardX import SummaryWriter
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -69,14 +69,13 @@ args.nhid_glat_l = 300
 args.nout = args.nhid_glat_l
 # ===================
 # Baseline Model Parameters
-args.model_pretrained_path = ""
 args.Trans_num = 3
 args.GAT_num = 3  # increase attention multiple head parallel or in series
 args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
 args.n_heads = 8
-args.batch_size = 50
+args.batch_size = 150
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
@@ -84,6 +83,9 @@ args.lr = 0.0001
 args.step_size = 15 # tuning this number, maybe change this to adaptive learning rate in the future depending on the loss
 args.ratio = 5
 args.if_max_length_fix = True
+args.pretrained_path = "/home/tangtangwzc/Common_sense/models/2019-10-24-00-38_2_2_2_2_2_2_concat_no_init_mask/best_test_node_mask_acc.pth"
+# args.pretrained_path = "/home/tangtangwzc/Common_sense/models/2019-10-29-11-34_2_2_2_2_2_2_concat_no_init_mask/best_test_node_mask_acc"
+# args.pretrained_path = ""
 
 # record_file_name = date + "_{}g_{}t_concat_no_init_mask.txt".format(args.GAT_num, args.Trans_num)
 
@@ -280,6 +282,8 @@ cri_rec = cri_rec.to(device=device)
 cri_con = torch.nn.NLLLoss()
 cri_con = cri_con.to(device=device)
 
+if args.pretrained_path != "":
+    model, epoch, acc = utils.load_model(model, args.pretrained_path)
 
 writer = SummaryWriter(log_dir="my_experiment", filename_suffix=record_file_name.split('.')[0])
 

@@ -116,7 +116,7 @@ class VG_data(Dataset):
             for idx in mask_idx:
                 # pdb.set_trace()
                 if idx not in noise_idx:
-                    input_embed[mask_idx] = np.array(self.vocab.index("<MASK>"))
+                    input_embed[idx] = np.array(self.vocab.index("<MASK>"))
                     # pdb.set_trace()
 
                 else:
@@ -141,7 +141,7 @@ class VG_data(Dataset):
 
                     # pdb.set_trace()
 
-                    input_embed[mask_idx] = np.array(noise_sample_idx)
+                    input_embed[idx] = np.array(noise_sample_idx)
 
                     # pdb.set_trace()
 
