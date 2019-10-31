@@ -6,21 +6,26 @@ import torch
 # import Constants
 import pdb
 
-def get_non_pad_mask(seq, blank):
+def get_non_pad_mask(seq, node_type):
     assert seq.dim() == 2
-    return seq.ne(blank).unsqueeze(-1).type(torch.float)
+    # b, n
+    mask = node_type != 2
+    return mask.unsqueeze(-1).type(torch.float)
+    # return seq.ne(blank).unsqueeze(-1).type(torch.float)
 
 
-def get_attn_key_pad_mask(seq_k, seq_q, blank):
+def get_attn_key_pad_mask(seq_q, node_type):
     ''' For masking out the padding part of key sequence. '''
 
     # Expand to fit the shape of key query attention matrix.
 
-    len_q = seq_q.size(1)
-    padding_mask = seq_k.eq(blank)
+    len_q = seq_q.size(1) # b, n
+    padding_mask = node_type == 2
+    # padding_mask = seq_k.eq(blank)
     padding_mask = padding_mask.unsqueeze(1).expand(-1, len_q, -1)  # b x lq x lk
-
+                                                                    # b, n, n
     return padding_mask
+
 
 
 class GAT(nn.Module):
@@ -247,20 +252,47 @@ class Connect_Cls(nn.Module):
 class Pred_label(nn.Module):
     def __init__(self, model):
         super(Pred_label, self).__init__()
-        embed_shape = model.embed.weight.shape
+        embed_shape_predicate = model.embed_predicate.weight.shape
+        embed_shape_entity = model.embed_predicate.weight.shape
 
-        self.FC = nn.Linear(embed_shape[1], embed_shape[1])
-        self.decoder = nn.Linear(embed_shape[1], embed_shape[0], bias=False)
-        self.decoder.weight = model.embed.weight
+        self.FC = nn.Linear(embed_shape_predicate[1], embed_shape_predicate[1])
+        self.decoder_predicate = nn.Linear(embed_shape_predicate[1], embed_shape_predicate[0], bias=False)
+        self.decoder_predicate.weight = model.embed_predicate.weight
+        self.decoder_entity = nn.Linear(embed_shape_entity[1], embed_shape_entity[0], bias=False)
+        self.decoder_entity.weight = model.embed_entity.weight
         self.softmax = nn.LogSoftmax(dim=-1)
 
-    def forward(self, h):
+    def forward(self, h, node_type):
         h = self.FC(h)
-        lm_logits = self.decoder(h)
-        lm_logits = self.softmax(lm_logits)
-        return lm_logits
+        b_size, n_num, _ = h.size()
+        predicate, predicate_order_list, entity, entity_order_list, blank, blank_order_list = split(h, node_type)
 
-#
+        # pdb.set_trace()
+
+        predicate = self.decoder_predicate(predicate)
+        entity = self.decoder_entity(entity)
+        blank = self.decoder_entity(blank)
+
+        # lm_logits = combine(predicate, predicate_order_list, entity, entity_order_list, b_size, n_num)
+        # pdb.set_trace()
+
+        # lm_logits = self.decoder(h)
+        predicate_logits = self.softmax(predicate)
+        entity_logits = self.softmax(entity)
+        blank_logits = self.softmax(blank)
+
+        # pdb.set_trace()
+        # if self.training:
+        #     return predicate_logits, entity_logits
+        # else:
+        _, predicate_labels = torch.max(predicate_logits, dim=-1, keepdim=True)
+        _, entity_labels = torch.max(entity_logits, dim=-1, keepdim=True)
+        _, blank_labels = torch.max(blank_logits, dim=-1, keepdim=True)
+
+        all_labels = combine(predicate_labels, predicate_order_list, entity_labels, entity_order_list, blank_labels, blank_order_list, b_size, n_num)
+        return predicate_logits, entity_logits, all_labels
+
+
 class GLAT_basic(nn.Module):
     def __init__(self, foc_type, att_type, d_model, nout,  n_head, d_k=64, d_v=64, dropout=0.1, d_inner=2048):
 
@@ -316,11 +348,56 @@ class GLAT(nn.Module):
         return x
 
 
+def split(fea, node_type):
+    batch_size = fea.size(0)
+    num_node = fea.size(1)
+    fea_flatten = fea.view(batch_size*num_node, -1)
+    node_type_flatten = node_type.view(-1)
+
+    order_list = torch.tensor(range(0, len(fea_flatten)))
+    predicate_mask = node_type_flatten == 0
+    entity_mask = node_type_flatten == 1
+    blank_mask = node_type_flatten == 2
+
+    predicate = fea_flatten[predicate_mask]
+    predicate_order_list = order_list[predicate_mask]
+
+    entity = fea_flatten[entity_mask]
+    entity_order_list = order_list[entity_mask]
+
+    blank = fea_flatten[blank_mask]
+    blank_order_list = order_list[blank_mask]
+
+    return predicate.squeeze(-1), predicate_order_list, entity.squeeze(-1), entity_order_list, blank.squeeze(-1), blank_order_list
+
+
+def combine(predicate, predicate_order_list, entity, entity_order_list, blank, blank_order_list, b_size, n_num):
+
+    # pdb.set_trace()
+
+    fea_embed = torch.cat((entity, predicate, blank), 0)
+
+    order_list = torch.cat((entity_order_list, predicate_order_list, blank_order_list), 0)
+
+    new_fea = [f.unsqueeze(0) for _, f in sorted(zip(order_list, fea_embed))]
+
+    # order_list = [o for o, _ in sorted(zip(order_list, fea_embed))]
+    # pdb.set_trace()
+
+    new_fea = torch.cat(new_fea, 0)
+    new_fea = new_fea.view(b_size, n_num, new_fea.size(-1))
+
+    return new_fea.squeeze(-1)
+
+
 class GLAT_Seq(nn.Module):
     def __init__(self, vocab_num, fea_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, types):
         super(GLAT_Seq, self).__init__()
         self.num = len(types)
-        self.embed = nn.Embedding(vocab_num, fea_dim)
+        # self.embed = nn.Embedding(vocab_num, fea_dim)
+        self.embed_predicate = nn.Embedding(vocab_num[0], fea_dim)
+        self.embed_entity = nn.Embedding(vocab_num[1], fea_dim)
+
         self.GLATs = nn.ModuleList()
 
         for i in range(self.num):
@@ -329,11 +406,49 @@ class GLAT_Seq(nn.Module):
 
 
 
-    def forward(self, fea, adj, non_pad_mask=None, slf_attn_mask=None):
+    def forward(self, fea, adj, node_type, non_pad_mask=None, slf_attn_mask=None):
         fea = fea.long()
-        x = self.embed(fea)
+        # x = self.embed(fea)
+        b_size, n_num = fea.size()
+
+        # fea_flatten = fea.view(-1)
+        # node_type_flatten = node_type.view(-1)
+        #
+        # order_list = torch.tensor(range(0, len(fea_flatten)))
+        # predicate_mask = node_type_flatten == 0
+        # entity_mask = node_type_flatten != 0
+        # # pdb.set_trace()
+        # predicate = fea_flatten[predicate_mask]
+        # predicate_order_list = order_list[predicate_mask]
+        #
+        # entity = fea_flatten[entity_mask]
+        # entity_order_list = order_list[entity_mask]
+
+        predicate, predicate_order_list, entity, entity_order_list, blank, blank_order_list = split(fea, node_type)
+
+        predicate = self.embed_predicate(predicate)
+        entity = self.embed_entity(entity)
+        blank = self.embed_entity(blank)
+
+        # fea_embed = torch.cat((entity, predicate), 0)
+        # order_list = torch.cat((entity_order_list, predicate_order_list), 0)
+        #
+        # new_fea = [f.unsqueeze(0) for _, f in sorted(zip(order_list, fea_embed))]
+        #
+        # order_list = [o for o, _ in sorted(zip(order_list, fea_embed))]
+        # # pdb.set_trace()
+        #
+        # new_fea = torch.cat(new_fea, 0)
+        # new_fea = new_fea.view(b_size, n_num, new_fea.size(-1))
+
+        new_fea = combine(predicate, predicate_order_list, entity, entity_order_list, blank, blank_order_list, b_size, n_num)
+
+        # pdb.set_trace()
+
+        # new_fea = new_fea.view(b_size, n_num, -1)
+
         for num in range(self.num):
-            x = self.GLATs[num](x, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)
+            x = self.GLATs[num](new_fea, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)
 
         return x
 
@@ -351,13 +466,13 @@ class GLATNET(nn.Module):
 
         self.blank = blank
 
-    def forward(self, fea, adj):
-        slf_attn_mask = get_attn_key_pad_mask(seq_k=fea, seq_q=fea, blank=self.blank)
-        non_pad_mask = get_non_pad_mask(fea, blank=self.blank)
+    def forward(self, fea, adj, node_type):
+        slf_attn_mask = get_attn_key_pad_mask(seq_q=fea, node_type=node_type)
+        non_pad_mask = get_non_pad_mask(seq=fea, node_type=node_type)
 
-        x = self.GLAT_Seq(fea, adj, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)
+        x = self.GLAT_Seq(fea, adj, node_type, non_pad_mask=non_pad_mask, slf_attn_mask=slf_attn_mask)
 
-        pred_label = self.Pred_label(x)
+        pred_label = self.Pred_label(x, node_type)
         pred_edge = self.Pred_connect(x, adj)
 
         return pred_label, pred_edge
