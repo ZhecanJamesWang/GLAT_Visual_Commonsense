@@ -260,7 +260,7 @@ class Pred_label(nn.Module):
         lm_logits = self.softmax(lm_logits)
         return lm_logits
 
-#
+
 class GLAT_basic(nn.Module):
     def __init__(self, foc_type, att_type, d_model, nout,  n_head, d_k=64, d_v=64, dropout=0.1, d_inner=2048):
 

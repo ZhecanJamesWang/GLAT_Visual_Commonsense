@@ -182,6 +182,7 @@ class VG_data(Dataset):
         pdb.set_trace()
         return len_data
 
+
 def encode_onehot(labels):
     classes = set(labels)
     classes_dict = {c: np.identity(len(classes))[i, :] for i, c in
@@ -189,6 +190,7 @@ def encode_onehot(labels):
     labels_onehot = np.array(list(map(classes_dict.get, labels)),
                              dtype=np.int32)
     return labels_onehot
+
 
 if __name__ == '__main__':
     home_path = os.getcwd()
