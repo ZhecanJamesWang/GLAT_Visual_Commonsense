@@ -39,8 +39,8 @@ class VG_data(Dataset):
         # self.vocab_decoder = self.vocab['decoder']
         # self.vocab_num = len(self.vocab_encoder.keys())
         # self.vocab_num = len(self.vocab)
-        self.mask_prob = 0.1
-        self.noise_prob = 0.5
+        self.mask_prob = 0.5
+        self.noise_prob = 1
 
         # print('vocabulary number', self.vocab_num)
 

@@ -1,4 +1,4 @@
- from __future__ import division
+from __future__ import division
 from __future__ import print_function
 
 import time
@@ -27,7 +27,7 @@ from tensorboardX import SummaryWriter
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 # Training settings
 parser = argparse.ArgumentParser()

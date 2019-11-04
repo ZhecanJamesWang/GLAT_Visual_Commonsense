@@ -147,13 +147,13 @@ class Counter(object):
 
         for i in range(self.classes):
 
-            self.correct[i] += (preds[acc] == i).sum()
+            self.correct[i] += (preds.data[acc] == i).sum()
 
             # self.correct[i] += preds[preds == i].eq(labels[labels == i]).double()
             self.num_pred[i] += len(preds[preds == i])
 
             self.num_label[i] += len(labels[labels == i])
-        print('finished')
+        # print('finished')
 
         # correct.append(correct.sum())
         # return correct, len(labels)
@@ -168,15 +168,19 @@ class Counter(object):
         # print("np.asarray(self.num_pred): ", np.asarray(self.num_pred))
         # return [(self.correct[i].data[0]/np.asarray(self.num_pred[i])) for i in range(self.classes)]
         return list(self.correct/np.asarray(self.num_pred))
+        # return np.asarray([i.cpu().numpy()[0] for i in self.correct]) / np.asarray(self.num_pred)
 
     def overall_acc(self):
         # print("sum(self.correct): ", sum(self.correct))
         # print("sum(self.num_pred)： ", sum(self.num_pred))
         return float(sum(self.correct))/sum(self.num_pred)
+        # return sum([i.data.cpu().numpy()[0] for i in self.correct])/sum(self.num_pred)
+        # return sum([i.cpu().numpy()[0] for i in self.correct])/sum(self.num_pred)
 
     def recall(self):
         # return [(self.correct[i].data[0]/np.asarray(self.num_label)) for i in range(self.classes)]
         return list(self.correct/np.asarray(self.num_label))
+        # return np.asarray([i.cpu().numpy()[0] for i in self.correct]) / np.asarray(self.num_label)
 
 def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     """Convert a scipy sparse matrix to a torch sparse tensor."""

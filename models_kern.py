@@ -1,16 +1,17 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from layers import GraphConvolution, EncoderLayer, GraphAttentionLayer, GraphAtt_Mutlihead_Basic, \
+from layers_kern import GraphConvolution, EncoderLayer, GraphAttentionLayer, GraphAtt_Mutlihead_Basic, \
     PositionwiseFeedForward
 import torch
 # import Constants
 import pdb
+from torch.autograd import Variable
 
 def get_non_pad_mask(seq, node_type):
     assert seq.dim() == 2
     # b, n
     mask = node_type != 2
-    return mask.unsqueeze(-1).type(torch.float)
+    return Variable(mask.unsqueeze(-1).float())
     # return seq.ne(blank).unsqueeze(-1).type(torch.float)
 
 
@@ -24,8 +25,7 @@ def get_attn_key_pad_mask(seq_q, node_type):
     # padding_mask = seq_k.eq(blank)
     padding_mask = padding_mask.unsqueeze(1).expand(-1, len_q, -1)  # b x lq x lk
                                                                     # b, n, n
-    return padding_mask
-
+    return Variable(padding_mask)
 
 
 class GAT(nn.Module):
@@ -290,6 +290,7 @@ class Pred_label(nn.Module):
         _, blank_labels = torch.max(blank_logits, dim=-1, keepdim=True)
 
         all_labels = combine(predicate_labels, predicate_order_list, entity_labels, entity_order_list, blank_labels, blank_order_list, b_size, n_num)
+
         return predicate_logits, entity_logits, all_labels
 
 
@@ -306,6 +307,7 @@ class GLAT_basic(nn.Module):
 
         enc_output, enc_slf_attn = self.slf_attn(
             enc_input, enc_input, enc_input, adj, mask=slf_attn_mask)
+
 
         enc_output *= non_pad_mask
 
@@ -348,41 +350,84 @@ class GLAT(nn.Module):
         return x
 
 
+# def split(fea, node_type):
+#     batch_size = fea.size(0)
+#     num_node = fea.size(1)
+#     # fea_flatten = fea.view(batch_size*num_node, -1)
+#     fea_flatten = fea.view(-1)
+#     node_type_flatten = node_type.view(-1)
+#
+#
+#     order_list = Variable(torch.Tensor(range(0, len(fea_flatten)))).cuda()
+#
+#     predicate_mask = node_type_flatten == 0
+#     entity_mask = node_type_flatten == 1
+#     blank_mask = node_type_flatten == 2
+#
+#     predicate = fea_flatten[predicate_mask]
+#
+#     pdb.set_trace()
+#
+#     predicate_order_list = order_list[predicate_mask]
+#
+#     entity = fea_flatten[entity_mask]
+#     entity_order_list = order_list[entity_mask]
+#
+#     blank = fea_flatten[blank_mask]
+#     blank_order_list = order_list[blank_mask]
+#
+#     pdb.set_trace()
+#
+#     return predicate.squeeze(-1), predicate_order_list, entity.squeeze(-1), entity_order_list, blank.squeeze(-1), blank_order_list
+
+
 def split(fea, node_type):
     batch_size = fea.size(0)
     num_node = fea.size(1)
     fea_flatten = fea.view(batch_size*num_node, -1)
-    node_type_flatten = node_type.view(-1)
+    dim = fea_flatten.size()[-1]
 
-    order_list = torch.tensor(range(0, len(fea_flatten)))
+    # torch.repeat(node_type, (-1, dim))
+    node_type_flatten = node_type.view(-1, 1).expand(-1, dim)
+
+    # order_list = torch.tensor(range(0, len(fea_flatten)))
+    order_list = torch.Tensor(range(0, len(fea_flatten))).cuda()
     predicate_mask = node_type_flatten == 0
     entity_mask = node_type_flatten == 1
     blank_mask = node_type_flatten == 2
 
-    predicate = fea_flatten[predicate_mask]
-    predicate_order_list = order_list[predicate_mask]
 
-    entity = fea_flatten[entity_mask]
-    entity_order_list = order_list[entity_mask]
+    predicate = fea_flatten[predicate_mask].view(-1, dim)
 
-    blank = fea_flatten[blank_mask]
-    blank_order_list = order_list[blank_mask]
+    predicate_order_list = order_list[predicate_mask[:, 0]]
 
-    return predicate.squeeze(-1), predicate_order_list, entity.squeeze(-1), entity_order_list, blank.squeeze(-1), blank_order_list
+    entity = fea_flatten[entity_mask].view(-1, dim)
+    entity_order_list = order_list[entity_mask[:, 0]]
+
+    blank = fea_flatten[blank_mask].view(-1, dim)
+    blank_order_list = order_list[blank_mask[:, 0]]
+
+    if len(blank.size()) != 0:
+        blank = blank.squeeze(-1)
+
+
+    return predicate.squeeze(-1), predicate_order_list, entity.squeeze(-1), entity_order_list, blank, blank_order_list
 
 
 def combine(predicate, predicate_order_list, entity, entity_order_list, blank, blank_order_list, b_size, n_num):
 
-    # pdb.set_trace()
 
-    fea_embed = torch.cat((entity, predicate, blank), 0)
+    if len(blank.size()) != 0:
+        fea_embed = torch.cat((entity, predicate, blank), 0)
+        order_list = torch.cat((entity_order_list, predicate_order_list, blank_order_list), 0)
+    else:
+        fea_embed = torch.cat((entity, predicate), 0)
+        order_list = torch.cat((entity_order_list, predicate_order_list), 0)
 
-    order_list = torch.cat((entity_order_list, predicate_order_list, blank_order_list), 0)
 
     new_fea = [f.unsqueeze(0) for _, f in sorted(zip(order_list, fea_embed))]
 
     # order_list = [o for o, _ in sorted(zip(order_list, fea_embed))]
-    # pdb.set_trace()
 
     new_fea = torch.cat(new_fea, 0)
     new_fea = new_fea.view(b_size, n_num, new_fea.size(-1))
@@ -395,6 +440,9 @@ class GLAT_Seq(nn.Module):
         super(GLAT_Seq, self).__init__()
         self.num = len(types)
         # self.embed = nn.Embedding(vocab_num, fea_dim)
+
+        print("vocab_num[0], fea_dim: ", vocab_num[0], fea_dim)
+
         self.embed_predicate = nn.Embedding(vocab_num[0], fea_dim)
         self.embed_entity = nn.Embedding(vocab_num[1], fea_dim)
 
@@ -417,7 +465,6 @@ class GLAT_Seq(nn.Module):
         # order_list = torch.tensor(range(0, len(fea_flatten)))
         # predicate_mask = node_type_flatten == 0
         # entity_mask = node_type_flatten != 0
-        # # pdb.set_trace()
         # predicate = fea_flatten[predicate_mask]
         # predicate_order_list = order_list[predicate_mask]
         #
@@ -425,6 +472,9 @@ class GLAT_Seq(nn.Module):
         # entity_order_list = order_list[entity_mask]
 
         predicate, predicate_order_list, entity, entity_order_list, blank, blank_order_list = split(fea, node_type)
+
+        # print(type(predicate))
+        # print(predicate.size())
 
         predicate = self.embed_predicate(predicate)
         entity = self.embed_entity(entity)
@@ -436,14 +486,11 @@ class GLAT_Seq(nn.Module):
         # new_fea = [f.unsqueeze(0) for _, f in sorted(zip(order_list, fea_embed))]
         #
         # order_list = [o for o, _ in sorted(zip(order_list, fea_embed))]
-        # # pdb.set_trace()
         #
         # new_fea = torch.cat(new_fea, 0)
         # new_fea = new_fea.view(b_size, n_num, new_fea.size(-1))
 
         new_fea = combine(predicate, predicate_order_list, entity, entity_order_list, blank, blank_order_list, b_size, n_num)
-
-        # pdb.set_trace()
 
         # new_fea = new_fea.view(b_size, n_num, -1)
 
