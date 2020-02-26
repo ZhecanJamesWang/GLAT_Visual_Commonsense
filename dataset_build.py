@@ -7,12 +7,13 @@ import pdb
 import time
 from torch.utils.data import Dataset
 import pickle
-import utils
+import utils_kern as utils
 from tqdm import tqdm
 import os
 # from nltk.corpus import stopwords
 
-home_path = os.environ['HOME']
+# home_path = os.environ['HOME']
+home_path = '/home/haoxuan/'
 
 # data_root = os.path.join(home_path, 'data/VG')
 data_root = os.path.join(home_path, 'data/top_150_50_new')
@@ -101,15 +102,20 @@ def preprocess_data(new_categories, rel_data, data_num):
         node_idxs = []
         adj = np.zeros(shape=(0, 0))
 
+        counter = 0
+
         for count, relationship in enumerate(single_rel_data):
             pred_flg = 1
             sub_flg = 1
             obj_flg = 1
             # if len(text_encoder.encode([relationship['predicate']])[0]) != 1 and relationship['predicate'] not in new_categories:
             if relationship['predicate'] not in new_categories:
+                print(relationship['predicate'])
+                if blank_token in relationship['predicate']:
+                    counter += 1
+                print(counter)
                 new_categories += [relationship['predicate'].lower()]
                 type_list.append(1)
-
             # pred_len = len(text_encoder.encode([relationship['predicate']])[0])
             nodes += [relationship['predicate'].lower()]
             node_idxs.append('0')

@@ -28,7 +28,7 @@ from torch.autograd import Variable
 now = datetime.datetime.now()
 date = now.strftime("%Y-%m-%d-%H-%M")
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -37,7 +37,7 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
 parser.add_argument('--fastmode', action='store_true', default=False,
                     help='Validate during training pass.')
 parser.add_argument('--seed', type=int, default=42, help='Random seed.')
-parser.add_argument('--epochs', type=int, default=300,
+parser.add_argument('--epochs', type=int, default=10000,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='Initial learning rate.')
@@ -77,8 +77,14 @@ args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
 args.n_heads = 8
-# args.batch_size = 50
+
+
+# vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 args.batch_size = 200
+# ==================================================================
+
+
+# args.batch_size = 1
 args.mini_node_num = 40
 args.weight_decay = 5e-4
 args.lr = 0.0001
@@ -147,7 +153,7 @@ def save_to_record(content):
         records = ""
 
 print(str(args))
-save_to_record(str(args))
+# save_to_record(str(args))
 
 
 def my_collate(batch):
@@ -289,7 +295,8 @@ model = GLATNET(vocab_num=vocab_num,
                 dropout=args.dropout,
                 nheads=args.n_heads,
                 blank=blank_idx,
-                types=args.struct)
+                types=args.struct,
+                w_glove=(train_dataset.w_entities, train_dataset.w_predicates))
 
 # model = model.to(device=device)
 model = model.cuda()
@@ -453,22 +460,22 @@ def train(epoch):
                       'time: {:.4f}s '.format(time.time() - t))
                 # 'loss_val: {:.4f}'.format(loss_val.item()),
                 # 'acc_val: {:.4f}'.format(acc_val.item()),
-                save_to_record("".join(['Train Epoch: {:04d} [{}/{}] '.format(epoch, i, len(train_loader)),
-                      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
-                      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
-                      # 'node_acc_train: {:.4f} '.format(node_acc.overall_acc()),
-                      # 'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
-                      'node_acc_entity_train: {:.4f} '.format(node_acc_entity.overall_acc()),
-                      'node_acc_predicate_train: {:.4f} '.format(node_acc_predicate.overall_acc()),
-                      # 'node_acc_mask_entity_train: {:.4f} '.format(node_acc_mask_entity.overall_acc()),
-                      'node_acc_mask_predicate_train: {:.4f} '.format(node_acc_mask_predicate.overall_acc()),
-                      'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
-                      'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
-                      'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
-                                                                    edge_acc_eff.class_acc()[1],
-                                                                     edge_acc_eff.class_acc()[2]),
-                      'edge_acc_eff_recall: {} {}'.format(str(edge_acc_eff.recall()[1]), str(edge_acc_eff.recall()[2])),
-                      'time: {:.4f}s '.format(time.time() - t)]))
+                # save_to_record("".join(['Train Epoch: {:04d} [{}/{}] '.format(epoch, i, len(train_loader)),
+                #       'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+                #       'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+                #       # 'node_acc_train: {:.4f} '.format(node_acc.overall_acc()),
+                #       # 'node_acc_mask_train: {:.4f} '.format(node_acc_mask.overall_acc()),
+                #       'node_acc_entity_train: {:.4f} '.format(node_acc_entity.overall_acc()),
+                #       'node_acc_predicate_train: {:.4f} '.format(node_acc_predicate.overall_acc()),
+                #       # 'node_acc_mask_entity_train: {:.4f} '.format(node_acc_mask_entity.overall_acc()),
+                #       'node_acc_mask_predicate_train: {:.4f} '.format(node_acc_mask_predicate.overall_acc()),
+                #       'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
+                #       'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
+                #       'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+                #                                                     edge_acc_eff.class_acc()[1],
+                #                                                      edge_acc_eff.class_acc()[2]),
+                #       'edge_acc_eff_recall: {} {}'.format(str(edge_acc_eff.recall()[1]), str(edge_acc_eff.recall()[2])),
+                #       'time: {:.4f}s '.format(time.time() - t)]))
 
 
 
@@ -493,24 +500,24 @@ def train(epoch):
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
       'time: {:.4f}s '.format(time.time() - t))
-    save_to_record("".join(['Train Epoch Finished: {:04d} '.format(epoch),
-      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
-      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
-        'node_acc_entity_train: {:.4f} '.format(node_acc_entity.overall_acc()),
-        'node_acc_predicate_train: {:.4f} '.format(node_acc_predicate.overall_acc()),
-        # 'node_acc_mask_entity_train: {:.4f} '.format(node_acc_mask_entity.overall_acc()),
-        'node_acc_mask_predicate_train: {:.4f} '.format(node_acc_mask_predicate.overall_acc()),
-          'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
-          'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
-          'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
-                                                        edge_acc_eff.class_acc()[1],
-                                                         edge_acc_eff.class_acc()[2]),
-          'edge_acc_eff_recall: {} {}'.format(str(edge_acc_eff.recall()[1]),
-                                                    str(edge_acc_eff.recall()[2])),
-                            # 'acc_train: {:.4f}'.format(acc_train.item()),
-      # 'loss_val: {:.4f}'.format(loss_val.item()),
-      # 'acc_val: {:.4f}'.format(acc_val.item()),
-      'time: {:.4f}s '.format(time.time() - t)]))
+    # save_to_record("".join(['Train Epoch Finished: {:04d} '.format(epoch),
+    #   'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+    #   'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+    #     'node_acc_entity_train: {:.4f} '.format(node_acc_entity.overall_acc()),
+    #     'node_acc_predicate_train: {:.4f} '.format(node_acc_predicate.overall_acc()),
+    #     # 'node_acc_mask_entity_train: {:.4f} '.format(node_acc_mask_entity.overall_acc()),
+    #     'node_acc_mask_predicate_train: {:.4f} '.format(node_acc_mask_predicate.overall_acc()),
+    #       'edge_acc_train_overallacc: {:.4f} '.format(edge_acc_train.overall_acc()),
+    #       'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc_eff.overall_acc()),
+    #       'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc_eff.class_acc()[0],
+    #                                                     edge_acc_eff.class_acc()[1],
+    #                                                      edge_acc_eff.class_acc()[2]),
+    #       'edge_acc_eff_recall: {} {}'.format(str(edge_acc_eff.recall()[1]),
+    #                                                 str(edge_acc_eff.recall()[2])),
+    #                         # 'acc_train: {:.4f}'.format(acc_train.item()),
+    #   # 'loss_val: {:.4f}'.format(loss_val.item()),
+    #   # 'acc_val: {:.4f}'.format(acc_val.item()),
+    #   'time: {:.4f}s '.format(time.time() - t)]))
 
     # print(edge_acc_eff.recall()[1])
     # print(edge_acc_eff.recall()[2])
@@ -656,21 +663,21 @@ def test(epoch):
       # 'loss_val: {:.4f}'.format(loss_val.item()),
       # 'acc_val: {:.4f}'.format(acc_val.item()),
       'time: {:.4f}s '.format(time.time() - t))
-    save_to_record("".join(['Test Epoch Finished: {:04d} '.format(epoch),
-      'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
-      'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
-      'node_acc_entity_train: {:.4f} '.format(node_acc_entity.overall_acc()),
-      'node_acc_predicate_train: {:.4f} '.format(node_acc_predicate.overall_acc()),
-      'node_acc_mask_predicate_train: {:.4f} '.format(node_acc_mask_predicate.overall_acc()),
-      'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
-      'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
-                                                            edge_acc.class_acc()[1],
-                                                            edge_acc.class_acc()[2]),
-      'edge_acc_eff_recall: {} {}'.format(str(edge_acc.recall()[1]), str(edge_acc.recall()[2])),
-      # 'acc_train: {:.4f}'.format(acc_train.item()),
-      # 'loss_val: {:.4f}'.format(loss_val.item()),
-      # 'acc_val: {:.4f}'.format(acc_val.item()),
-      'time: {:.4f}s '.format(time.time() - t)]))
+    # save_to_record("".join(['Test Epoch Finished: {:04d} '.format(epoch),
+    #   'loss_rec: {:.4f} '.format(loss_total_rec/num_sample),
+    #   'loss_con: {:.4f} '.format(loss_totoal_con/num_sample),
+    #   'node_acc_entity_train: {:.4f} '.format(node_acc_entity.overall_acc()),
+    #   'node_acc_predicate_train: {:.4f} '.format(node_acc_predicate.overall_acc()),
+    #   'node_acc_mask_predicate_train: {:.4f} '.format(node_acc_mask_predicate.overall_acc()),
+    #   'edge_acc_eff_overallacc: {:.4f} '.format(edge_acc.overall_acc()),
+    #   'edge_acc_eff_classacc: {:.4f} {:.4f} {:.4f} '.format(edge_acc.class_acc()[0],
+    #                                                         edge_acc.class_acc()[1],
+    #                                                         edge_acc.class_acc()[2]),
+    #   'edge_acc_eff_recall: {} {}'.format(str(edge_acc.recall()[1]), str(edge_acc.recall()[2])),
+    #   # 'acc_train: {:.4f}'.format(acc_train.item()),
+    #   # 'loss_val: {:.4f}'.format(loss_val.item()),
+    #   # 'acc_val: {:.4f}'.format(acc_val.item()),
+    #   'time: {:.4f}s '.format(time.time() - t)]))
 
     # writer.add_scalar('test/loss_rec', loss_total_rec/num_sample, epoch)
     # writer.add_scalar('test/loss_con', loss_totoal_con/num_sample, epoch)
@@ -685,17 +692,17 @@ def test(epoch):
     # writer.add_scalar('train/edge_acc_eff_recall1', edge_acc.recall()[1], epoch)
     # writer.add_scalar('train/edge_acc_eff_recall2', edge_acc.recall()[2], epoch)
 
-    if acc_recorder.compare_node_mask_acc(node_acc_mask_predicate.overall_acc()):
-        utils_kern.save_model(model, epoch, "best_test_node_mask_predicate_acc", args.model_outdir, record_file_name.split(".")[0],
-                         acc_recorder.get_best_test_node_mask_acc())
-    if acc_recorder.compare_edge_pos_acc(edge_acc.class_acc()[1]):
-        utils_kern.save_model(model, epoch, "best_test_edge_pos_acc", args.model_outdir, record_file_name.split(".")[0],
-                         acc_recorder.get_best_test_edge_pos_acc())
+    # if acc_recorder.compare_node_mask_acc(node_acc_mask_predicate.overall_acc()):
+    #     utils_kern.save_model(model, epoch, "best_test_node_mask_predicate_acc", args.model_outdir, record_file_name.split(".")[0],
+    #                      acc_recorder.get_best_test_node_mask_acc())
+    # if acc_recorder.compare_edge_pos_acc(edge_acc.class_acc()[1]):
+    #     utils_kern.save_model(model, epoch, "best_test_edge_pos_acc", args.model_outdir, record_file_name.split(".")[0],
+    #                      acc_recorder.get_best_test_edge_pos_acc())
 
     print("best node_mask_acc {:.4f}".format(acc_recorder.get_best_test_node_mask_acc()))
     print("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
-    save_to_record("best node_mask_acc {:.4f}".format(acc_recorder.get_best_test_node_mask_acc()))
-    save_to_record("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
+    # save_to_record("best node_mask_acc {:.4f}".format(acc_recorder.get_best_test_node_mask_acc()))
+    # save_to_record("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
 
 
 t_total = time.time()

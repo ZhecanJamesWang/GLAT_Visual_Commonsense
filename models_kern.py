@@ -7,6 +7,7 @@ import torch
 import pdb
 from torch.autograd import Variable
 
+
 def get_non_pad_mask(seq, node_type):
     assert seq.dim() == 2
     # b, n
@@ -436,7 +437,7 @@ def combine(predicate, predicate_order_list, entity, entity_order_list, blank, b
 
 
 class GLAT_Seq(nn.Module):
-    def __init__(self, vocab_num, fea_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, types):
+    def __init__(self, vocab_num, fea_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, types, w_glove):
         super(GLAT_Seq, self).__init__()
         self.num = len(types)
         # self.embed = nn.Embedding(vocab_num, fea_dim)
@@ -445,6 +446,9 @@ class GLAT_Seq(nn.Module):
 
         self.embed_predicate = nn.Embedding(vocab_num[0], fea_dim)
         self.embed_entity = nn.Embedding(vocab_num[1], fea_dim)
+
+        # self.embed_predicate.weight.data = w_glove[1]
+        # self.embed_entity.weight.data = w_glove[0]
 
         self.GLATs = nn.ModuleList()
 
@@ -501,12 +505,12 @@ class GLAT_Seq(nn.Module):
 
 
 class GLATNET(nn.Module):
-    def __init__(self, vocab_num, feat_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, blank, types):
+    def __init__(self, vocab_num, feat_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, blank, types, w_glove):
         """Dense version of GAT."""
         super(GLATNET, self).__init__()
         print("initialize GlATNET with types: ", types)
 
-        self.GLAT_Seq = GLAT_Seq(vocab_num, feat_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, types)
+        self.GLAT_Seq = GLAT_Seq(vocab_num, feat_dim, nhid_glat_g, nhid_glat_l, nout, dropout, nheads, types, w_glove)
 
         self.Pred_label = Pred_label(self.GLAT_Seq)
         self.Pred_connect = Connect_Cls(nhid_glat_g, int(nhid_glat_g/ 2), 3)

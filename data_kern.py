@@ -12,6 +12,8 @@ import math
 import copy
 import random
 # from nltk.corpus import stopwords
+from io import open
+from torch.autograd import Variable
 
 
 class VG_data(Dataset):
@@ -39,8 +41,8 @@ class VG_data(Dataset):
         # self.vocab_decoder = self.vocab['decoder']
         # self.vocab_num = len(self.vocab_encoder.keys())
         # self.vocab_num = len(self.vocab)
-        self.mask_prob = 0.5
-        self.noise_prob = 1
+        self.mask_prob = 0.3
+        self.noise_prob = 0
 
         # print('vocabulary number', self.vocab_num)
 
@@ -80,6 +82,60 @@ class VG_data(Dataset):
             self.data = pickle.load(f, encoding='latin')
 
         print('{} data num: {}'.format(status, len(self.data['node_name'])))
+
+        self.glove_embed()
+
+    def glove_embed(self):
+
+        # self.w_predicates = torch.Tensor(len(self.ind_to_predicates), 300)
+        # torch.nn.init.normal(self.w_predicates)
+        #
+        # self.w_entities = torch.Tensor(len(self.ind_to_entities), 300)
+        # torch.nn.init.normal(self.w_entities)
+        #
+        # file = "glove.840B.300d.txt"
+        # counter = 0
+        # # EXTRACT DESIRED GLOVE WORD VECTORS FROM TEXT FILE
+        # with open(file, encoding="utf-8", mode="r") as textFile:
+        #     for line in textFile:
+        #         # Separate the values from the word
+        #         line = line.split()
+        #         word = line[0]
+        #
+        #         # print("counter: ", counter)
+        #         # print(word)
+        #         if word in self.ind_to_predicates:
+        #             counter += 1
+        #             embed = line[1:]
+        #             if len(embed) > 300:
+        #                 embed = embed[1:]
+        #
+        #             embed = [float(n) for n in embed]
+        #             # print("counter: ", counter)
+        #             # print("line[1:]: ", embed)
+        #             # print("np.array(line[1:]: ", np.array(embed))
+        #             # print("line[1:]: ", len(embed))
+        #
+        #             idx = self.ind_to_predicates.index(word)
+        #             self.w_predicates[idx] = torch.Tensor(np.array(embed, dtype=np.float32)).float()
+        #
+        #         if word in self.ind_to_entities:
+        #             counter += 1
+        #             embed = line[1:]
+        #             if len(embed) > 300:
+        #                 embed = embed[1:]
+        #
+        #             embed = [float(n) for n in embed]
+        #             # print("counter: ", counter)
+        #             # print("line[1:]: ", embed)
+        #             # print("np.array(line[1:]: ", np.array(embed))
+        #             # print("line[1:]: ", len(embed))
+        #
+        #             idx = self.ind_to_entities.index(word)
+        #             self.w_entities[idx] = torch.Tensor(np.array(embed, dtype=np.float32)).float()
+
+                # pdb.set_trace()
+        self.w_entities, self.w_predicates = None, None
 
     def __getitem__(self, idx):
         node_class = self.data['node_class'][idx]

@@ -153,7 +153,6 @@ class Counter(object):
             self.num_pred[i] += len(preds[preds == i])
 
             self.num_label[i] += len(labels[labels == i])
-        print('finished')
 
         # correct.append(correct.sum())
         # return correct, len(labels)
