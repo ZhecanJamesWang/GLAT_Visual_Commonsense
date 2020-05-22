@@ -23,7 +23,7 @@ class VG_data(Dataset):
         # data_num = 10000
         # name = '_'.join([str(10000), str(2000)])
         # name = '_'.join(['full', 'full'])
-        name = '_'.join(['20000', '1000', '5000'])
+        name = '_'.join(['57723', '5000', '26446', 'singledir'])
 
         with open(os.path.join(data_root, 'ind_to_classes_{}.pkl'.format(name)), 'rb') as f:
             self.ind_to_entities = pickle.load(f, encoding='latin')
@@ -146,33 +146,44 @@ class VG_data(Dataset):
         predicate_num = len(node_type) - entity_num
 
         # mask for predicate
-        mask_num_predicate = math.ceil(predicate_num * self.mask_prob)
-        mask_idx_predicate = random.sample(list(np.where(node_type == 0)[0]), mask_num_predicate)
+        # mask_num_predicate = math.ceil(predicate_num * self.mask_prob)
+        # mask_idx_predicate = random.sample(list(np.where(node_type == 0)[0]), mask_num_predicate)
         input_mask = np.zeros(node_class.shape[0], dtype=int)  # 0-regular   1-mask/noise
-        input_mask[mask_idx_predicate] = 1
+        for i in range(len(input_mask)):
+            input_mask[i] = np.random.choice(a=np.array([0, 1]), p=np.array([1-self.mask_prob, self.mask_prob]))
+        mask_idx = np.nonzero(input_mask==1)[0]
+
+        # pdb.set_trace()
+        # input_mask[mask_idx_predicate] = 1
 
         input_class = copy.deepcopy(node_class)
 
-        if len(mask_idx_predicate) != 0:
+        if len(mask_idx) != 0:
 
-            noise_num = math.ceil(len(mask_idx_predicate) * self.noise_prob)
-            mask_idx_copy = copy.deepcopy(mask_idx_predicate)
+            noise_num = math.floor(len(mask_idx) * self.noise_prob)
+            mask_idx_copy = copy.deepcopy(mask_idx)
             noise_idx = []
 
             for i in range(noise_num):
                 noise_idx += [mask_idx_copy.pop()]
 
-            for idx_node in mask_idx_predicate:
+            for idx_node in mask_idx:
                 if idx_node not in noise_idx:
-                    input_class[idx_node] = self.ind_to_predicates.index("<MASK>")
+                    target_type = node_type[idx_node]
+                    if target_type == 0:
+                        # pdb.set_trace()
+                        input_class[idx_node] = self.ind_to_predicates.index("<MASK>")
+                    else:
+                        input_class[idx_node] = self.ind_to_entities.index("<MASK>")
 
                 else:
                     target_type = node_type[idx_node]
                     if target_type == 0:
                         # pdb.set_trace()
-                        input_class[idx_node] = random.sample(list(range(len(self.ind_to_predicates))), 1)[0]
+                        input_class[idx_node] = random.sample(list(range(1, len(self.ind_to_predicates)-1)), 1)[0]
                     else:
-                        input_class[idx_node] = random.sample(list(range(len(self.ind_to_entities))), 1)[0]
+                        input_class[idx_node] = random.sample(list(range(1, len(self.ind_to_entities)-1)), 1)[0]
+        # pdb.set_trace()
 
         return torch.from_numpy(np.array(node_class)).long(), torch.from_numpy(np.array(input_class)).long(),\
                torch.from_numpy(np.array(adj)).float(), torch.from_numpy(np.array(input_mask)).long(), torch.from_numpy(np.array(node_type)).long()

@@ -66,8 +66,8 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 num_global = 0
 num_local = 0
 num_glat = 0
-num_glat_hybrid_graph = 0
-num_gcn = 12
+num_glat_hybrid_graph = 12
+num_gcn = 0
 
 args.struct = [1]*num_local + [0]*num_global +[2]*num_glat + [3] * num_glat_hybrid_graph + [4] * num_gcn
 
@@ -84,7 +84,7 @@ args.GAT_num = 3  # increase attention multiple head parallel or in series
 args.fea_dim = 300
 args.nhid_gat = 300   #statt with 300
 args.nhid_trans = 300
-args.n_heads = 8
+args.n_heads = 12
 # args.batch_size = 50
 args.batch_size = 200
 # args.batch_size = 100
@@ -185,30 +185,13 @@ def my_collate(batch):
     for i, (gt_class, input_class, adj, input_mask, node_type) in enumerate(batch):
         if i not in remove_list:
             # print(i)
-            # gt_classes.append(torch.cat((gt_class, blank_idx*torch.ones(max_length-gt_class.size(0), dtype=torch.long)), 0).unsqueeze(0))
-            gt_classes.append(torch.cat((gt_class, blank_idx*(torch.ones(max_length-gt_class.size(0)).long())), 0).unsqueeze(0))
-
-            # input_classes.append(torch.cat((input_class, blank_idx * torch.ones(max_length-input_class.size(0), dtype=torch.long)), 0).unsqueeze(0))
-            input_classes.append(torch.cat((input_class, blank_idx * (torch.ones(max_length-input_class.size(0)).long())), 0).unsqueeze(0))
-
-            # pdb.set_trace()
-            # new_adj = torch.cat((adj, torch.zeros(max_length-adj.size(0), adj.size(1), dtype=torch.float)), 0)
-            new_adj = torch.cat((adj, (torch.zeros(max_length-adj.size(0), adj.size(1)).float())), 0)
-
-            # new_adj = torch.cat((new_adj, torch.zeros(new_adj.size(0), max_length-new_adj.size(1), dtype=torch.float)), 1)
-            new_adj = torch.cat((new_adj, (torch.zeros(new_adj.size(0), max_length-new_adj.size(1)).float())), 1)
-
-            # pdb.set_trace()
+            gt_classes.append(torch.cat((gt_class, blank_idx*torch.ones(max_length-gt_class.size(0), dtype=torch.long)), 0).unsqueeze(0))
+            input_classes.append(torch.cat((input_class, blank_idx * torch.ones(max_length-input_class.size(0), dtype=torch.long)), 0).unsqueeze(0))
+            new_adj = torch.cat((adj, torch.zeros(max_length-adj.size(0), adj.size(1), dtype=torch.float)), 0)
+            new_adj = torch.cat((new_adj, torch.zeros(new_adj.size(0), max_length-new_adj.size(1), dtype=torch.float)), 1)
             adjs.append(new_adj.unsqueeze(0))
-            # pdb.set_trace()
-            # input_masks.append(torch.cat((input_mask, torch.zeros(max_length-input_mask.size(0), dtype=torch.long)), 0).unsqueeze(0))
-            input_masks.append(torch.cat((input_mask, torch.zeros(max_length-input_mask.size(0)).long()), 0).unsqueeze(0))
-
-            # pdb.set_trace()
-            # pad_masks.append(torch.cat((torch.zeros_like(gt_class), torch.ones(max_length-gt_class.size(0), dtype=torch.long)), 0).unsqueeze(0))
-            # node_types.append(torch.cat((node_type, 2 * torch.ones(max_length-node_type.size(0), dtype=torch.long)), 0).unsqueeze(0))
-            node_types.append(torch.cat((node_type, 2 * (torch.ones(max_length-node_type.size(0)).long())), 0).unsqueeze(0))
-
+            input_masks.append(torch.cat((input_mask, torch.zeros(max_length-input_mask.size(0), dtype=torch.long)), 0).unsqueeze(0))
+            node_types.append(torch.cat((node_type, 2 * torch.ones(max_length-node_type.size(0), dtype=torch.long)), 0).unsqueeze(0))
             # node types 0:predicate 1:entity 2:blank/padding
 
     gt_classes = torch.cat(gt_classes, 0)
@@ -301,8 +284,7 @@ model = GLATNET(vocab_num=vocab_num,
                 types=args.struct,
                 w_glove=(train_dataset.w_entities, train_dataset.w_predicates))
 
-# model = model.to(device=device)
-model = model.cuda()
+model = model.to(device=device)
 # model = nn.DataParallel(model)
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -312,14 +294,13 @@ scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=0.5)
 # cri_rec = torch.nn.CrossEntropyLoss()
 # cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
 cri_rec = torch.nn.NLLLoss(ignore_index=blank_idx)
-# cri_rec = cri_rec.to(device=device)
-cri_rec = cri_rec.cuda()
+cri_rec = cri_rec.to(device=device)
 
 # cri_con = torch.nn.CrossEntropyLoss()
 # cri_con = torch.nn.NLLLoss(ignore_index=blank_idx)
 cri_con = torch.nn.NLLLoss()
-# cri_con = cri_con.to(device=device)
-cri_con = cri_con.cuda()
+cri_con = cri_con.to(device=device)
+
 
 writer = SummaryWriter(log_dir="my_experiment", filename_suffix=record_file_name.split('.')[0])
 
@@ -339,21 +320,21 @@ def train(epoch):
 
     for i, (gt_class, input_class, adj_con, adj_lbl, input_mask, node_type) in enumerate(train_loader):
 
-        # input_class = input_class.to(device=device)
-        # adj_con = adj_con.to(device=device)
-        # adj_lbl = adj_lbl.to(device=device)
-        # # adj = adj.to(device=device)
-        # gt_class = gt_class.to(device=device)
-        # node_type = node_type.to(device=device)
-        # input_mask = input_mask.to(device=device)
+        input_class = input_class.to(device=device)
+        adj_con = adj_con.to(device=device)
+        adj_lbl = adj_lbl.to(device=device)
+        # adj = adj.to(device=device)
+        gt_class = gt_class.to(device=device)
+        node_type = node_type.to(device=device)
+        input_mask = input_mask.to(device=device)
 
-        input_class = Variable(input_class).cuda()
-        adj_con = Variable(adj_con).cuda()
-        adj_lbl = Variable(adj_lbl).cuda()
-        # adj = adj.cuda()
-        gt_class = Variable(gt_class).cuda()
-        node_type = node_type.cuda()
-        input_mask = Variable(input_mask).cuda()
+        # input_class = Variable(input_class).cuda()
+        # adj_con = Variable(adj_con).cuda()
+        # adj_lbl = Variable(adj_lbl).cuda()
+        # # adj = adj.cuda()
+        # gt_class = Variable(gt_class).cuda()
+        # node_type = node_type.cuda()
+        # input_mask = Variable(input_mask).cuda()
 
         # keep the last dimension for word length option
         # input_embed = input_embed.squeeze(-1)
@@ -429,9 +410,9 @@ def train(epoch):
             optimizer.step()
 
             num_sample += 1
-            # loss_total_rec += loss_rec.item()
+            loss_total_rec += loss_rec.item()
             # loss_totoal_con += loss_con.item()
-            loss_total_rec += loss_rec.data[0]
+            # loss_total_rec += loss_rec.data[0]
             # loss_totoal_con += loss_con.data[0]
 
             node_acc_entity.add(pred_label_eff_entity, gt_class_eff_entity)
@@ -441,8 +422,11 @@ def train(epoch):
             # hack to work if not computing per class accuracy
             node_acc_mask_all.add(pred_label_mask_all, gt_class_mask_all)
 
-            edge_acc_eff.add(pred_connect_eff, Variable(gt_edge_eff))
-            edge_acc_train.add(pred_connect_train, Variable(gt_edge_train))
+            edge_acc_eff.add(pred_connect_eff, gt_edge_eff)
+            edge_acc_train.add(pred_connect_train, gt_edge_train)
+
+            # edge_acc_eff.add(pred_connect_eff, Variable(gt_edge_eff))
+            # edge_acc_train.add(pred_connect_train, Variable(gt_edge_train))
 
             # if not args.fastmode:
             #     # Evaluate validation set performance separately,
@@ -564,21 +548,21 @@ def test(epoch):
     for i, (gt_class, input_class, adj_con, adj_lbl, input_mask, node_type) in enumerate(test_loader):
 
 
-        # input_class = input_class.to(device=device)
-        # adj_con = adj_con.to(device=device)
-        # adj_lbl = adj_lbl.to(device=device)
-        # # adj = adj.to(device=device)
-        # gt_class = gt_class.to(device=device)
-        # node_type = node_type.to(device=device)
-        # input_mask = input_mask.to(device=device)
+        input_class = input_class.to(device=device)
+        adj_con = adj_con.to(device=device)
+        adj_lbl = adj_lbl.to(device=device)
+        # adj = adj.to(device=device)
+        gt_class = gt_class.to(device=device)
+        node_type = node_type.to(device=device)
+        input_mask = input_mask.to(device=device)
 
-        input_class = Variable(input_class.cuda())
-        adj_con = Variable(adj_con.cuda())
-        adj_lbl = Variable(adj_lbl.cuda())
-        # adj = adj.cuda()
-        gt_class = Variable(gt_class.cuda())
-        node_type = node_type.cuda()
-        input_mask = Variable(input_mask.cuda())
+        # input_class = Variable(input_class.cuda())
+        # adj_con = Variable(adj_con.cuda())
+        # adj_lbl = Variable(adj_lbl.cuda())
+        # # adj = adj.cuda()
+        # gt_class = Variable(gt_class.cuda())
+        # node_type = node_type.cuda()
+        # input_mask = Variable(input_mask.cuda())
 
         # input_embed = input_embed.squeeze(-1)
         # gt_embed = gt_embed.squeeze(-1)
@@ -654,7 +638,8 @@ def test(epoch):
             # loss = loss_rec + loss_con
 
             num_sample += 1
-            loss_total_rec += loss_rec.data[0]
+            # loss_total_rec += loss_rec.data[0]
+            loss_total_rec += loss_rec.item()
             # loss_totoal_con += loss_con.item()
 
             # node_acc_mask.add(pred_label_mask, gt_embed_mask)
@@ -667,7 +652,8 @@ def test(epoch):
             node_acc_mask_predicate.add(pred_label_mask_predicate, gt_class_mask_predicate)
             # hack to work if not computing per class accuracy
             node_acc_mask_all.add(pred_label_mask_all, gt_class_mask_all)
-            edge_acc.add(pred_connect_eff, Variable(gt_edge_eff))
+            edge_acc.add(pred_connect_eff, gt_edge_eff)
+            # edge_acc.add(pred_connect_eff, Variable(gt_edge_eff))
 
         # torch.cuda.empty_cache()
 

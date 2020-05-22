@@ -36,8 +36,11 @@ class GraphConvolution(Module):
 
     def forward(self, input, adj):
         # pdb.set_trace()
-        support = torch.mm(input, self.weight)
-        output = torch.spmm(adj, support)
+        support = torch.matmul(input, self.weight)
+        degree_mat = adj.sum(dim=2)
+        degree_mat[degree_mat==0] = 1
+        adj_divided = adj/(degree_mat.unsqueeze(-1))
+        output = torch.bmm(adj_divided, support)
         if self.bias is not None:
             return output + self.bias
         else:
@@ -296,7 +299,7 @@ class GraphAtt_Mutlihead_Basic(nn.Module):
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
     """
 
-    def __init__(self, n_head, d_model, d_k, d_v, foc_type, dropout=0.1):
+    def __init__(self, n_head, d_model, d_out, d_k, d_v, foc_type, d_in=0, dropout=0.1):
         super(GraphAtt_Mutlihead_Basic, self).__init__()
 
         self.n_head = n_head
@@ -309,14 +312,14 @@ class GraphAtt_Mutlihead_Basic(nn.Module):
 
         self.attention = GraphAtt_ScaledDotProduct(np.power(d_k, 0.5), dropout, foc_type)
         # self.layer_norm = nn.LayerNorm(d_model)
-        self.layer_norm = LayerNormalization(d_model)
+        self.layer_norm = LayerNormalization(d_out)
 
-        self.fc = nn.Linear(n_head * d_v, d_model)
+        self.fc = nn.Linear(n_head * d_v, d_out)
         # nn.init.xavier_normal_(self.fc.weight)
 
         self.dropout = nn.Dropout(dropout)
 
-        self.fc1 = nn.Linear(2 * d_model, d_model)
+        self.fc1 = nn.Linear(d_model+d_out, d_out)
 
     def forward(self, q, k, v, adj, mask=None):
 
@@ -395,6 +398,8 @@ class GraphAtt_ScaledDotProduct(nn.Module):
 
             attn_mask = adj > 0
             zero_vec_mask = adj <= 0
+
+            # pdb.set_trace()
 
             attn = attn_mask.float() * attn
             attn += zero_vec_mask.float() * zero_vec

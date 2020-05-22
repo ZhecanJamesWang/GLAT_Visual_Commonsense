@@ -66,10 +66,9 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 num_global = 0
 num_local = 0
 num_glat = 0
-num_glat_hybrid_graph = 0
-num_gcn = 12
+num_glat_hybrid_graph = 6
 
-args.struct = [1]*num_local + [0]*num_global +[2]*num_glat + [3] * num_glat_hybrid_graph + [4] * num_gcn
+args.struct = [1]*num_local + [0]*num_global +[2]*num_glat + [3] * num_glat_hybrid_graph
 
 # args.struct = [0]*num_global + [1]*num_local +[2]*num_glat
 
@@ -135,6 +134,7 @@ print("record_file_name: ", record_file_name)
 acc_recorder_pred = utils_kern.Record()
 acc_recorder_entity = utils_kern.Record()
 acc_recorder_all = utils_kern.Record()
+acc_recorder_edge = utils_kern.Record()
 
 def write_to_file(file_name, content):
     fh = open(file_name, "a")
@@ -419,10 +419,10 @@ def train(epoch):
             loss_rec_entity = cri_rec(pred_label_entities, gt_class_flat[node_type_flat==1])
             loss_rec = loss_rec_entity + loss_rec_predicate
             # pdb.set_trace()
-            # loss_con = cri_con(pred_connect_train, gt_edge_train.to(device=device))
+            loss_con = cri_con(pred_connect_train, Variable(gt_edge_train.cuda()))
             # loss_con = cri_con(pred_connect_eff, gt_edge_eff.to(device=device))
-            # loss = loss_rec + loss_con
-            loss = loss_rec
+            loss = loss_rec + loss_con
+            # loss = loss_rec
 
             optimizer.zero_grad()
             loss.backward()
@@ -432,7 +432,7 @@ def train(epoch):
             # loss_total_rec += loss_rec.item()
             # loss_totoal_con += loss_con.item()
             loss_total_rec += loss_rec.data[0]
-            # loss_totoal_con += loss_con.data[0]
+            loss_totoal_con += loss_con.data[0]
 
             node_acc_entity.add(pred_label_eff_entity, gt_class_eff_entity)
             node_acc_predicate.add(pred_label_eff_predicate, gt_class_eff_predicate)
@@ -650,12 +650,12 @@ def test(epoch):
             loss_rec_predicate = cri_rec(pred_label_predicate, gt_class_flat[node_type_flat==0])
             loss_rec_entity = cri_rec(pred_label_entities, gt_class_flat[node_type_flat==1])
             loss_rec = loss_rec_entity + loss_rec_predicate
-            # loss_con = cri_con(pred_connect_eff, gt_edge_eff.to(device=device))
-            # loss = loss_rec + loss_con
+            loss_con = cri_con(pred_connect_eff, Variable(gt_edge_eff.cuda()))
+            loss = loss_rec + loss_con
 
             num_sample += 1
             loss_total_rec += loss_rec.data[0]
-            # loss_totoal_con += loss_con.item()
+            loss_totoal_con += loss_con.data[0]
 
             # node_acc_mask.add(pred_label_mask, gt_embed_mask)
             # node_acc.add(pred_label_eff, gt_embed_eff)
@@ -730,18 +730,18 @@ def test(epoch):
         utils_kern.save_model(model, epoch, "best_test_node_mask_all_acc", args.model_outdir, record_file_name.split(".")[0],
                          acc_recorder_all.get_best_test_node_mask_acc())
 
-    # if acc_recorder.compare_edge_pos_acc(edge_acc.class_acc()[1]):
-    #     utils_kern.save_model(model, epoch, "best_test_edge_pos_acc", args.model_outdir, record_file_name.split(".")[0],
-    #                      acc_recorder.get_best_test_edge_pos_acc())
+    if acc_recorder_edge.compare_edge_pos_acc(edge_acc.class_acc()[1]):
+        utils_kern.save_model(model, epoch, "best_test_edge_pos_acc", args.model_outdir, record_file_name.split(".")[0],
+                        acc_recorder_edge.get_best_test_edge_pos_acc())
 
     print("best node_mask_predicate_acc {:.4f}".format(acc_recorder_pred.get_best_test_node_mask_acc()))
     print("best node_mask_entity_acc {:.4f}".format(acc_recorder_entity.get_best_test_node_mask_acc()))
     print("best node_mask_all_acc {:.4f}".format(acc_recorder_all.get_best_test_node_mask_acc()))
-    # print("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
+    print("best edge_pos_acc {:.4f}".format(acc_recorder_edge.get_best_test_edge_pos_acc()))
     save_to_record("best node_mask_predicate_acc {:.4f}".format(acc_recorder_pred.get_best_test_node_mask_acc()))
     save_to_record("best node_mask_entity_acc {:.4f}".format(acc_recorder_entity.get_best_test_node_mask_acc()))
     save_to_record("best node_mask_all_acc {:.4f}".format(acc_recorder_all.get_best_test_node_mask_acc()))
-    # save_to_record("best edge_pos_acc {:.4f}".format(acc_recorder.get_best_test_edge_pos_acc()))
+    save_to_record("best edge_pos_acc {:.4f}".format(acc_recorder_edge.get_best_test_edge_pos_acc()))
 
 
 t_total = time.time()
